@@ -8,10 +8,13 @@ on:
   workflow_dispatch:
 
 jobs:
-  release:
+  release-windows:
     runs-on: windows-latest
     permissions:
       contents: write
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      skipped: ${{ steps.check.outputs.skipped }}
 
     steps:
       - uses: actions/checkout@v4
@@ -44,19 +47,15 @@ jobs:
       - name: Build & bundle installer (DML)
         if: steps.check.outputs.skipped == 'false'
         env:
-          # Signing deferred — no cert discovery in CI
           CSC_IDENTITY_AUTO_DISCOVERY: "false"
         run: npm run dist:dml
 
       - name: Build & bundle installer (CUDA)
         if: steps.check.outputs.skipped == 'false'
         env:
-          # Signing deferred — no cert discovery in CI
           CSC_IDENTITY_AUTO_DISCOVERY: "false"
         run: npm run dist:cuda
 
-      # Release notes come from the versioned "## [<version>]" section.
-      # Falls back to generated notes if the section is missing so the release never fails.
       - name: Extract release notes
         if: steps.check.outputs.skipped == 'false'
         shell: bash
@@ -87,3 +86,51 @@ jobs:
             build/cuda-runtime.7z build/cuda-runtime.json \
             --repo "${{ github.repository }}" $NOTES \
             --title "Lumina v${{ steps.version.outputs.version }}"
+
+  release-macos:
+    needs: release-windows
+    if: needs.release-windows.outputs.skipped == 'false'
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-14
+            arch: arm64
+          - os: macos-13
+            arch: x64
+    runs-on: ${{ matrix.os }}
+    permissions:
+      contents: write
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build macOS ${{ matrix.arch }}
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: "false"
+          LUMINA_MAC_ARCH: ${{ matrix.arch }}
+        run: npm run dist:macos:${{ matrix.arch }}
+
+      - name: Upload macOS artifacts to release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ needs.release-windows.outputs.version }}
+        run: |
+          gh release upload "v${VERSION}" \
+            dist/macos/Lumina-${VERSION}-mac-${{ matrix.arch }}.dmg \
+            dist/macos/Lumina-${VERSION}-mac-${{ matrix.arch }}.zip \
+            dist/macos/macos.yml \
+            dist/macos/*.blockmap \
+            --repo "${{ github.repository }}" \
+            --clobber
