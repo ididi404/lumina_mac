@@ -64,16 +64,25 @@ export interface TextDetection extends BaseDetection {
  */
 export type LayerType = "text-dialogue" | "text-free" | "cleanup" | "image";
 
+export type TextDirection = "horizontal" | "vertical";
+
 export interface Typography {
   fontFamily: string | null; // null = default
-  fontSize: number | null; // null = auto-fit to bbox
+  /** Explicit px size. null = continuous auto-fit to bbox. */
+  fontSize: number | null;
   fontWeight: number; // 100-900
   fontStyle: "normal" | "italic";
+  /**
+   * Horizontal: left / center / right.
+   * Vertical: same field maps to top / middle / bottom.
+   */
   align: "left" | "center" | "right";
+  /** Reading direction — horizontal LTR wrap, or vertical CJK columns. */
+  direction: TextDirection;
   color: string; // hex
   strokeColor: string | null; // outline, null = off
   strokeWidth: number;
-  /** Clockwise degrees, 0 = horizontal (auto-detected from original text) */
+  /** Clockwise degrees, 0 = upright */
   rotation: number;
 }
 
@@ -84,6 +93,7 @@ export function defaultTypography(): Typography {
     fontWeight: 400,
     fontStyle: "normal",
     align: "center",
+    direction: "horizontal",
     color: "#111111",
     strokeColor: null,
     strokeWidth: 0,
@@ -103,7 +113,12 @@ export function loadGlobalTypography(): Typography {
     const raw = localStorage.getItem(GLOBAL_TYPE_KEY);
     if (raw) {
       const t = Object.assign(defaultTypography(), JSON.parse(raw));
-      t.fontSize = null; // session-only — always start with auto-fit
+      if (t.direction !== "vertical") t.direction = "horizontal";
+      // null = continuous auto-fit (default). Keep explicit sizes; bump
+      // only undersized legacy locked sizes so old boxes aren't tiny.
+      if (t.fontSize != null && t.fontSize > 0 && t.fontSize < 24)
+        t.fontSize = 42;
+      else if (t.fontSize != null && !(t.fontSize > 0)) t.fontSize = null;
       return t;
     }
   } catch {
@@ -114,8 +129,7 @@ export function loadGlobalTypography(): Typography {
 
 export function saveGlobalTypography(t: Typography): void {
   try {
-    // fontSize is session-only — exclude from persistence so it resets to auto on restart.
-    const copy = Object.assign({}, t, { fontSize: null });
+    const copy = Object.assign({}, t);
     localStorage.setItem(GLOBAL_TYPE_KEY, JSON.stringify(copy));
   } catch {
     /* storage full/blocked — non-fatal */

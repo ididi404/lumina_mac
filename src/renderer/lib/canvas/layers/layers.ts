@@ -22,18 +22,20 @@ canvas.selectLayer = function (id): void {
   page._selectedLayerId = id;
   // Collapse editor when switching selection — double-click to re-expand.
   if (id !== page._expandedLayerId) page._expandedLayerId = null;
-  // Mirror to the parallel detection selection so the text box on the
-  // canvas highlights when a layer is picked from the sidebar.
+  // Mirror detection index for status / det-box mode.
   page._selectedTextIdx = textIdxForLayerId(page, id);
-  canvas.render(); // re-syncs textool transformer to _selectedLayerId
-  if (page._selectedTextIdx !== null) {
+
+  // Canvas chrome follows the detection-box toggle:
+  //   showDetBoxes on  → green detection selection
+  //   showDetBoxes off → red text-layer selection
+  if (state.showDetBoxes && page._selectedTextIdx !== null) {
     canvas.selectTextDetection(page._selectedTextIdx);
-  } else {
-    // Free-text layer — no parallel detection box; clear the rect highlight
-    // without touching _selectedLayerId.
-    applyTextSelection(null);
-    if (sidebar && sidebar.render) sidebar.render();
+    return;
   }
+  // Text-layer mode (or free-text): clear green chrome, show red handles.
+  applyTextSelection(null);
+  canvas.render();
+  if (sidebar && sidebar.render) sidebar.render();
 };
 
 canvas.expandLayer = function (id): void {

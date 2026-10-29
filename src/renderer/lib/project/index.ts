@@ -6,6 +6,8 @@ import { history, hydrateMaskImages } from "../history";
 import { hydrateCleanupCanvas } from "../canvas/tools/paint/shared";
 import { pendingCommit } from "../canvas/tools/paint/commit";
 import { canvas } from "../canvas/index";
+import { destroyStage } from "../canvas/render";
+import { clearSelections } from "../canvas/tools/select/shared";
 import * as pageImages from "./page-images";
 import { sidebar } from "../sidebar";
 import { models } from "../models";
@@ -123,8 +125,34 @@ export async function handleCloseRequest(): Promise<void> {
   window.lumina.confirmClose(await guardUnsavedChanges());
 }
 
+/** Clear the session and show the welcome screen (pages already empty OK). */
+export function resetToLanding(): void {
+  for (const old of state.pages) history.forgetPage(old);
+  pageImages.flushDecoded();
+  state.pages = [];
+  state.activePageIdx = null;
+  setSavePath(null);
+  clearDirty();
+  models.setHasImage(false);
+  canvas._clearGroups();
+  destroyStage();
+  clearSelections();
+  landing.show();
+  canvas.renderPageStrip();
+  ui.updatePageIndicator();
+  sidebar.render();
+  history._updateButtons();
+}
+
 export const project = {
   buildPayload,
+
+  /** Close the current project and return to the blank welcome screen. */
+  async close(): Promise<void> {
+    if (state.pages.length === 0) return;
+    if (!(await guardUnsavedChanges(i18n.t("project.closeDetail")))) return;
+    resetToLanding();
+  },
 
   /** Save to the current target; shows the dialog on first save.
    *  `silent` (auto-save) suppresses toasts. */
@@ -164,7 +192,7 @@ export const project = {
           toast.textContent = `${i18n.t("export.running")} (${cur}/${total})`;
         });
         ui.dismissToast(toast);
-        const saving = ui.toast("Saving PSD...", "running", 0);
+        const saving = ui.toast(i18n.t("project.savingPsd"), "running", 0);
         const data = serializePsd(psd);
         await window.lumina.writePsdFile({ filePath: savePath, data });
         ui.dismissToast(saving);
@@ -234,7 +262,7 @@ export const project = {
           toast.textContent = `${i18n.t("export.running")} (${cur}/${total})`;
         });
         ui.dismissToast(toast);
-        const saving = ui.toast("Saving PSD...", "running", 0);
+        const saving = ui.toast(i18n.t("project.savingPsd"), "running", 0);
         const data = serializePsd(psd);
         await window.lumina.writePsdFile({ filePath: savePath, data });
         ui.dismissToast(saving);

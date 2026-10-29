@@ -7,18 +7,43 @@ import { canvas } from "../canvas/index";
 import { sidebar } from "../sidebar";
 import { models } from "../models";
 import { normalizeAutoText } from "./text-norm";
+import { revealTypesetLayers } from "./reveal-text";
+import { flushDetBboxes } from "../canvas/detection/groups";
+import {
+  alignDialogueLayerToDet,
+  dialogueLayerForTextIdx,
+} from "../canvas/detection/selection";
 import type { OcrResult } from "../../types";
 import { log } from "../logger";
 
 export const ocr = {
-  /** Run OCR on all text detections of the active page */
-  run: async function (): Promise<void> {
+  /**
+   * Run OCR on the active page.
+   * Standalone OCR button: pass `{ onlySelected: true }` to redo just the
+   * highlighted detection when one is selected; otherwise all boxes.
+   * Full pipeline always calls without opts (every box).
+   */
+  run: async function (opts?: { onlySelected?: boolean }): Promise<void> {
     const page = state.getActivePage();
     if (state.isRunning || !page) return;
     if (!page.textDetections.length) {
       ui.toast(i18n.t("toast.ocrNoText"), "warn");
       return;
     }
+    // Pull latest box geometry off the stage (move/resize) before cropping.
+    flushDetBboxes();
+
+    const selIdx = page._selectedTextIdx;
+    const selective =
+      !!opts?.onlySelected &&
+      selIdx !== null &&
+      selIdx >= 0 &&
+      selIdx < page.textDetections.length;
+    if (selective) {
+      await ocr.runBoxes([selIdx]);
+      return;
+    }
+
     state.isRunning = true;
 
     const btn = document.getElementById("btn-ocr") as HTMLButtonElement | null;
@@ -48,17 +73,23 @@ export const ocr = {
         throw new Error(result?.detail || "OCR failed");
 
       log.debug("fe", `ocr: done ${(result.results || []).length} result(s)`);
+      let wrote = false;
       (result.results || []).forEach(function (r) {
         const text = normalizeAutoText(r.text || "");
         const det = page.textDetections[r.index];
         if (det) det.text = text;
-        // Mirror into the unified layer model
-        const layer = page.layers[r.index];
-        if (layer && layer.type === "text-dialogue") layer.source = text;
+        const layer = dialogueLayerForTextIdx(page, r.index);
+        if (layer) {
+          layer.source = text;
+          // Typeset box follows the crop that produced this text.
+          alignDialogueLayerToDet(page, r.index);
+          if (text.trim()) wrote = true;
+        }
       });
 
-      // Boxes stay visible after OCR (toggle in the header) — they only
-      // disappear once inpainting produces masks.
+      // Same hand-off as post-inpaint: green det chrome off → typeset boxes on.
+      // Header eye toggle can bring detections back for more edits.
+      if (wrote) revealTypesetLayers();
       canvas.render();
       sidebar.render();
       history.snapshot();
@@ -90,6 +121,7 @@ export const ocr = {
   ): Promise<void> {
     const page = state.getActivePage();
     if (!page || !indices.length || state.isRunning) return;
+    flushDetBboxes();
     const boxes = indices
       .map(function (i) {
         return page.textDetections[i];
@@ -132,6 +164,7 @@ export const ocr = {
       // Backend indexes results by request position — map back through the
       // original detection indices. Skip if the boxes changed under us.
       let intact = true;
+      let wrote = false;
       (result.results || []).forEach(function (r, k) {
         if (!intact) return;
         const k2 = typeof r.index === "number" ? r.index : k;
@@ -140,12 +173,18 @@ export const ocr = {
           intact = false;
           return;
         }
-        det.text = normalizeAutoText(r.text || "");
-        const layer = page.layers[indices[k2]];
-        if (layer && layer.type === "text-dialogue")
-          layer.source = normalizeAutoText(r.text || "");
+        const text = normalizeAutoText(r.text || "");
+        det.text = text;
+        const detIdx = indices[k2];
+        const layer = dialogueLayerForTextIdx(page, detIdx);
+        if (layer) {
+          layer.source = text;
+          alignDialogueLayerToDet(page, detIdx);
+          if (text.trim()) wrote = true;
+        }
       });
 
+      if (wrote) revealTypesetLayers();
       canvas.render();
       sidebar.render();
       // Standalone edit — its own undo step restores the previous text.

@@ -12,6 +12,7 @@ import {
   type PresetId,
 } from "../pipeline";
 import { translateSettings } from "../pipeline/translate";
+import { TRANSLATE_PROVIDERS } from "../../../shared/translate-providers";
 import { settings } from "../settings/index";
 import { state } from "../state";
 import { canvas } from "../canvas/index";
@@ -193,15 +194,16 @@ function _closeDropdowns(): void {
 
 /* ── Pipeline Preset ── */
 
-const _presetLabels: Record<string, string> = {
-  full: "Full Pipeline",
-  clean: "Clean Only",
-};
+function _presetLabelKey(id: string): string {
+  return id === "clean" ? "pipeline.presetClean" : "pipeline.presetFull";
+}
 
 function _updatePresetLabel(): void {
   const label = document.getElementById("btn-pipeline-all-label");
-  const id = loadPreset();
-  if (label) label.textContent = _presetLabels[id] || "Full Pipeline";
+  if (!label) return;
+  const key = _presetLabelKey(loadPreset());
+  label.setAttribute("data-i18n", key);
+  label.textContent = i18n.t(key);
 }
 
 function _togglePresetDropdown(btn: HTMLElement): void {
@@ -220,7 +222,7 @@ function _togglePresetDropdown(btn: HTMLElement): void {
 
   const current = loadPreset();
   let html = `<div class="pipeline-dropdown-header">
-    <span>Pipeline Preset</span>
+    <span>${_esc(i18n.t("pipeline.presetTitle"))}</span>
   </div>
   <div class="pipeline-dropdown-list">`;
 
@@ -231,7 +233,7 @@ function _togglePresetDropdown(btn: HTMLElement): void {
         <div class="pipeline-item-check">
           ${isSelected ? '<i data-lucide="check" class="w-3.5 h-3.5 text-lumina"></i>' : ""}
         </div>
-        <div class="pipeline-item-name">${_esc(p.label)}</div>
+        <div class="pipeline-item-name">${_esc(i18n.t(p.labelKey))}</div>
       </div>`;
   }
 
@@ -289,9 +291,9 @@ function _renderModelDropdown(
   const recId = RECOMMENDED[kind] || "";
 
   const titleMap: Record<string, string> = {
-    detect: i18n.t("models.tabDetect") || "Detection Models",
-    ocr: i18n.t("models.tabOcr") || "OCR Models",
-    inpaint: i18n.t("models.tabInpaint") || "Inpainting Models",
+    detect: i18n.t("models.sectionDetect"),
+    ocr: i18n.t("models.sectionOcr"),
+    inpaint: i18n.t("models.sectionInpaint"),
   };
 
   let html = `<div class="pipeline-dropdown-header">
@@ -300,7 +302,7 @@ function _renderModelDropdown(
   <div class="pipeline-dropdown-list">`;
 
   if (list.length === 0) {
-    html += `<div class="pipeline-dropdown-empty">No models available</div>`;
+    html += `<div class="pipeline-dropdown-empty">${_esc(i18n.t("pipeline.noModels"))}</div>`;
   } else {
     for (const m of list) {
       const isSelected = m.id === current;
@@ -312,15 +314,13 @@ function _renderModelDropdown(
           <div class="pipeline-item-check">
             ${isSelected ? '<i data-lucide="check" class="w-3.5 h-3.5 text-lumina"></i>' : ""}
           </div>
-          <div class="pipeline-item-name">
-            ${_esc(m.name)}
-            ${isRec ? '<span class="pipeline-badge pipeline-badge-rec">REC</span>' : ""}
-          </div>
-          <div class="pipeline-item-status">
+          <div class="pipeline-item-name" title="${_esc(m.name)}">${_esc(m.name)}</div>
+          <div class="pipeline-item-meta">
+            ${isRec ? `<span class="pipeline-badge pipeline-badge-rec">${_esc(i18n.t("pipeline.badgeRec"))}</span>` : ""}
             ${
               isReady
-                ? '<span class="pipeline-badge pipeline-badge-ready">Ready</span>'
-                : '<span class="pipeline-badge pipeline-badge-dl"><i data-lucide="download" class="w-3 h-3"></i> Get</span>'
+                ? `<span class="pipeline-badge pipeline-badge-ready">${_esc(i18n.t("pipeline.badgeReady"))}</span>`
+                : `<span class="pipeline-badge pipeline-badge-dl"><i data-lucide="download" class="w-3 h-3"></i> ${_esc(i18n.t("pipeline.badgeGet"))}</span>`
             }
           </div>
         </div>
@@ -332,7 +332,7 @@ function _renderModelDropdown(
   <div class="pipeline-dropdown-footer">
     <button class="pipeline-dropdown-link" id="link-open-model-settings">
       <i data-lucide="settings" class="w-3 h-3"></i>
-      <span>Manage Models...</span>
+      <span>${_esc(i18n.t("pipeline.manageModels"))}</span>
     </button>
   </div>`;
 
@@ -367,43 +367,25 @@ function _renderModelDropdown(
     });
 }
 
-/** Render Translation Provider Dropdown */
+/** Render Translation Provider Dropdown — list from shared catalog. */
 function _renderTranslateDropdown(root: HTMLElement): void {
   const cfg = translateSettings.load();
   const currentProvider = cfg.provider || "gemini";
 
-  const providers = [
-    {
-      id: "gemini",
-      name: "Google Gemini",
-      sub: cfg.geminiModel || "gemini-2.0-flash",
-    },
-    {
-      id: "openrouter",
-      name: "OpenRouter",
-      sub: cfg.openrouterModel || "openai/gpt-4o-mini",
-    },
-    { id: "grok", name: "xAI Grok", sub: cfg.grokModel || "grok-3" },
-    {
-      id: "custom",
-      name: "Custom LLM",
-      sub: cfg.llmModel || "openai-compatible",
-    },
-  ];
-
   let html = `<div class="pipeline-dropdown-header">
-    <span>${_esc(i18n.t("translate.provider") || "Translation Provider")}</span>
+    <span>${_esc(i18n.t("translate.provider"))}</span>
   </div>
   <div class="pipeline-dropdown-list">`;
 
-  for (const p of providers) {
+  for (const p of TRANSLATE_PROVIDERS) {
     const isSelected = p.id === currentProvider;
+    const name = i18n.t(p.labelKey) || p.label;
     html += `
       <div class="pipeline-dropdown-item ${isSelected ? "selected" : ""}" data-provider-id="${_esc(p.id)}">
         <div class="pipeline-item-check">
           ${isSelected ? '<i data-lucide="check" class="w-3.5 h-3.5 text-lumina"></i>' : ""}
         </div>
-        <div class="pipeline-item-name">${_esc(p.name)}</div>
+        <div class="pipeline-item-name">${_esc(name)}</div>
       </div>
     `;
   }
@@ -412,7 +394,7 @@ function _renderTranslateDropdown(root: HTMLElement): void {
   <div class="pipeline-dropdown-footer">
     <button class="pipeline-dropdown-link" id="link-open-trans-settings">
       <i data-lucide="settings" class="w-3 h-3"></i>
-      <span>Translation Settings...</span>
+      <span>${_esc(i18n.t("pipeline.transSettings"))}</span>
     </button>
   </div>`;
 
@@ -421,11 +403,7 @@ function _renderTranslateDropdown(root: HTMLElement): void {
   root.querySelectorAll(".pipeline-dropdown-item").forEach((item) => {
     item.addEventListener("click", (e) => {
       e.stopPropagation();
-      const providerId = item.getAttribute("data-provider-id") as
-        | "gemini"
-        | "openrouter"
-        | "grok"
-        | "custom";
+      const providerId = item.getAttribute("data-provider-id");
       if (providerId) {
         cfg.provider = providerId;
         translateSettings.save(cfg);

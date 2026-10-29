@@ -14,6 +14,8 @@ function on<T>(channel: string, cb: (msg: T) => void): () => void {
 }
 
 const api: LuminaAPI = {
+  /** Host OS — used for title-bar / chrome layout (darwin vs win32). */
+  platform: process.platform,
   importImage: () => invoke(IPC.importImage),
   importImages: () => invoke(IPC.importImages),
   apiPost: <T>(endpoint: string, body: unknown) =>
@@ -29,6 +31,7 @@ const api: LuminaAPI = {
   getFonts: () => invoke(IPC.getFonts),
   loadTranslations: () => invoke(IPC.loadTranslations),
   loadDefaultInstruction: () => invoke(IPC.loadDefaultInstruction),
+  setUiLang: (code) => invoke(IPC.setUiLang, code),
   setSecret: (key, value) => invoke(IPC.secretsSet, key, value),
   getSecret: (key) => invoke(IPC.secretsGet, key),
   getSecrets: (keys) => invoke(IPC.secretsGetMany, keys),
@@ -76,3 +79,16 @@ const api: LuminaAPI = {
 };
 
 contextBridge.exposeInMainWorld("lumina", api);
+
+/** Apply platform markers as soon as <html> exists (CSP-safe; no inline script). */
+function applyPlatformClass(): void {
+  try {
+    const root = document.documentElement;
+    root.dataset.platform = process.platform;
+    root.classList.add(`platform-${process.platform}`);
+  } catch {
+    /* document not ready */
+  }
+}
+applyPlatformClass();
+window.addEventListener("DOMContentLoaded", applyPlatformClass);

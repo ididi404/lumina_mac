@@ -59,7 +59,10 @@ export function renderInfo(): void {
   const layerVis = page.layers.filter(function (l) {
     return l.visible;
   }).length;
-  const fmt = st.format === "png" ? "PNG" : "JPG (q" + st.quality + ")";
+  const fmt =
+    st.format === "png"
+      ? i18n.t("export.png")
+      : i18n.t("export.formatJpgQuality", { quality: st.quality });
   info.innerHTML =
     '<h4 class="export-info-title">' +
     esc(i18n.t("export.info")) +

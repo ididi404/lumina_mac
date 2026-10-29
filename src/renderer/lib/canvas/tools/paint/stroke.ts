@@ -22,6 +22,13 @@ let _points: Array<{ x: number; y: number }> = [];
 let _mode: "brush" | "eraser" | null = null;
 /** Bounding box (image px) of current stroke — blitted per stamped segment. */
 let _dirtyRect: { x: number; y: number; w: number; h: number } | null = null;
+let _onMove: ((ev: MouseEvent | TouchEvent) => void) | null = null;
+let _onUp: (() => void) | null = null;
+
+/** Abort an in-progress stroke (e.g. tool switched mid-drag). */
+export function cancelActiveStroke(): void {
+  if (_onUp) _onUp();
+}
 
 export function handleStroke(
   page: Page,
@@ -53,7 +60,9 @@ export function handleStroke(
 
   const onMove = function (ev: MouseEvent | TouchEvent): void {
     if (!_dragging) return;
-    const rect = canvas.getStage()!.container().getBoundingClientRect();
+    const stage = canvas.getStage();
+    if (!stage) return;
+    const rect = stage.container().getBoundingClientRect();
     const xy = getXY(ev);
     const p = stageToImg(xy.x - rect.left, xy.y - rect.top);
     _points.push(p);
@@ -76,10 +85,16 @@ export function handleStroke(
   };
 
   const onUp = function (): void {
-    window.removeEventListener("mousemove", onMove);
-    window.removeEventListener("mouseup", onUp);
-    window.removeEventListener("touchmove", onMove);
-    window.removeEventListener("touchend", onUp);
+    if (_onMove) {
+      window.removeEventListener("mousemove", _onMove);
+      window.removeEventListener("touchmove", _onMove);
+    }
+    if (_onUp) {
+      window.removeEventListener("mouseup", _onUp);
+      window.removeEventListener("touchend", _onUp);
+    }
+    _onMove = null;
+    _onUp = null;
     if (!_dragging) return;
     _dragging = false;
     const changed = _points.length > 0;
@@ -89,6 +104,8 @@ export function handleStroke(
     void commitStrokeTracked(page, changed);
   };
 
+  _onMove = onMove;
+  _onUp = onUp;
   window.addEventListener("mousemove", onMove);
   window.addEventListener("mouseup", onUp);
   window.addEventListener("touchmove", onMove);

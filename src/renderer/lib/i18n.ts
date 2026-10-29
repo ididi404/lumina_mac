@@ -2,7 +2,15 @@
 
 type TranslationData = Record<string, Record<string, string>>;
 
-let _lang: string = localStorage.getItem("lumina-lang") || "en";
+function _initialLang(): string {
+  const saved = localStorage.getItem("lumina-lang");
+  // Bahasa Indonesia removed — migrate leftover preference to Simplified Chinese.
+  if (saved === "id") return "zh";
+  if (saved === "en" || saved === "zh") return saved;
+  return "zh";
+}
+
+let _lang: string = _initialLang();
 let _data: TranslationData = {};
 
 function _interpolate(str: string, params?: Record<string, unknown>): string {
@@ -23,11 +31,20 @@ export function lang(): string {
   return _lang;
 }
 
+function _syncMainLang(code: string): void {
+  try {
+    void window.lumina?.setUiLang?.(code);
+  } catch {
+    /* preload not ready */
+  }
+}
+
 export function setLang(code: string): void {
   if (code === _lang) return;
   _lang = code;
   localStorage.setItem("lumina-lang", code);
   document.documentElement.lang = code;
+  _syncMainLang(code);
   _renderAll();
 }
 
@@ -55,6 +72,7 @@ export function init(): Promise<void> {
     .then((data) => {
       _data = data || {};
       document.documentElement.lang = _lang;
+      _syncMainLang(_lang);
       _renderAll();
     })
     .catch(() => {

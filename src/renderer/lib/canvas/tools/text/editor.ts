@@ -1,4 +1,4 @@
-/** Text Tool — in-place editing (textarea overlay) */
+/** Text Tool — in-place editing (caret overlay; canvas glyphs stay put). */
 import Konva from "konva";
 import { state } from "../../../state";
 import { canvas } from "../../index";
@@ -11,21 +11,26 @@ import {
 } from "./shared";
 import { layerTextNodes } from "./shared";
 import { getTransformer } from "./transformer";
+import { refreshNodeGlyphs } from "./node-factory";
 
 /** Commit and remove editor. Empty text on existing layer deletes it. */
 export function removeEditor(commit: boolean): void {
   const ta = getEditor();
   if (!ta) return;
   const id = getEditingLayerId();
-  // Capture the resized box BEFORE the textarea is removed.
-  const rect = ta.getBoundingClientRect();
+  const node = id
+    ? layerTextNodes.find(function (n) {
+        return n.getAttr("layerId") === id;
+      })
+    : null;
+  const box = node
+    ? node.findOne<Konva.Rect>(".layer-text-box")
+    : null;
   setEditor(null);
   setEditingLayerId(null);
   ta.remove();
   if (commit && id) {
     const value = ta.value.trim();
-    // Sync the textarea's (possibly resized) box back to the layer — the
-    // text box can be resized while editing, Photoshop-style.
     const page = state.getActivePage();
     const lay = page
       ? page.layers.find(function (l) {
@@ -34,22 +39,27 @@ export function removeEditor(commit: boolean): void {
       : null;
     if (lay) {
       const sr = canvas.getScaleRatio();
-      lay.bbox.w = Math.max(8, Math.round(rect.width / sr));
-      lay.bbox.h = Math.max(8, Math.round(rect.height / sr));
+      if (box) {
+        lay.bbox.w = Math.max(8, Math.round(box.width() / sr));
+        lay.bbox.h = Math.max(8, Math.round(box.height() / sr));
+      } else {
+        const rect = ta.getBoundingClientRect();
+        lay.bbox.w = Math.max(8, Math.round(rect.width / sr));
+        lay.bbox.h = Math.max(8, Math.round(rect.height / sr));
+      }
     }
     if (!value) {
-      canvas.deleteLayer(id); // emptied text deletes the layer
+      canvas.deleteLayer(id);
     } else {
+      if (page) page._selectedLayerId = id;
       canvas.setLayerText(id, "translation", value);
     }
   } else {
-    canvas.render(); // restore hidden node visuals
+    canvas.render();
   }
 }
 
-/** True when the last pointer press (in stage coords) falls on the edited
- * box or its transformer handles — those presses keep the editor open
- * (reposition caret, resize via anchor) instead of exiting edit mode. */
+/** True when the last pointer press falls on the edited box / handles. */
 function _pressInsideBox(): boolean {
   const stage = canvas.getStage();
   const id = getEditingLayerId();
@@ -61,7 +71,7 @@ function _pressInsideBox(): boolean {
   const pos = stage.getPointerPosition();
   if (!pos) return false;
   const box = node.getClientRect();
-  const M = 12; // transformer padding (6) + half anchor (4) + slack
+  const M = 16;
   return (
     pos.x >= box.x - M &&
     pos.x <= box.x + box.width + M &&
@@ -70,26 +80,17 @@ function _pressInsideBox(): boolean {
   );
 }
 
-/** Any press outside the edited box while editing exits edit mode — even if
- * the textarea already lost focus (a suppressed blur), so the editor can't
- * get stuck open. */
-document.addEventListener("mousedown", function () {
+document.addEventListener("mousedown", function (e) {
   if (!getEditor() || !getEditingLayerId()) return;
+  const t = e.target as Node | null;
+  if (t && (t as Element).closest?.("#type-section")) return;
   if (!_pressInsideBox()) removeEditor(true);
 });
 
-/** Vertically center single-line content (Photoshop-like). */
-function _fitLineHeight(ta: HTMLTextAreaElement): void {
-  ta.style.lineHeight = "1.2";
-  const fs = parseFloat(ta.style.fontSize) || 16;
-  // One visual line ≈ 1.2em; two wrapped/explicit lines ≈ 2.4em. Anything
-  // below ~1.9em is a single line (with slack for textarea quirks).
-  if (!ta.value.includes("\n") && ta.scrollHeight <= fs * 1.2 * 1.6) {
-    ta.style.lineHeight = ta.clientHeight + "px";
-  }
-}
-
-/** Show a textarea positioned exactly over the layer's box — live preview */
+/**
+ * Open a caret-only textarea over the box. Canvas glyphs stay visible and
+ * are the only painted text — entering edit must not replace/move them.
+ */
 export function startEdit(layerId: string): void {
   const page = state.getActivePage();
   const konvaLayer = canvas.getLayer();
@@ -101,9 +102,22 @@ export function startEdit(layerId: string): void {
   const initial = lay.translation || lay.source || "";
 
   const sr = canvas.getScaleRatio();
-  const p = imgToStage(lay.bbox.x, lay.bbox.y);
   const typo = lay.typography;
-  const dispFs = (typo.fontSize || Math.max(8, lay.bbox.h * 0.6)) * sr;
+  const node = layerTextNodes.find(function (n) {
+    return n.getAttr("layerId") === layerId;
+  });
+  const box = node
+    ? node.findOne<Konva.Rect>(".layer-text-box")
+    : null;
+  const boxW = box ? box.width() : Math.max(1, lay.bbox.w * sr);
+  const boxH = box ? box.height() : Math.max(1, lay.bbox.h * sr);
+  const p = node
+    ? { x: node.x(), y: node.y() }
+    : imgToStage(lay.bbox.x, lay.bbox.y);
+  const glyph = node
+    ? node.findOne<Konva.Text>(".layer-text-glyphs")
+    : null;
+  const dispFs = glyph && glyph.fontSize() > 0 ? glyph.fontSize() : Math.max(8, lay.bbox.h * 0.6) * sr;
 
   const ta = document.createElement("textarea");
   ta.id = "text-tool-editor";
@@ -111,12 +125,16 @@ export function startEdit(layerId: string): void {
   ta.style.position = "absolute";
   ta.style.left = p.x + "px";
   ta.style.top = p.y + "px";
-  ta.style.width = Math.max(80, lay.bbox.w * sr) + "px";
-  ta.style.height = Math.max(30, lay.bbox.h * sr) + "px";
-  ta.style.minWidth = "40px";
-  ta.style.minHeight = "20px";
-  ta.style.background = "rgba(14,14,16,0.35)";
-  ta.style.color = typo.color;
+  ta.style.width = boxW + "px";
+  ta.style.height = boxH + "px";
+  ta.style.boxSizing = "border-box";
+  ta.style.minWidth = "0";
+  ta.style.minHeight = "0";
+  // Dim the box so edit mode is obvious; text itself stays on the canvas.
+  ta.style.background = "rgba(14,14,16,0.2)";
+  ta.style.color = "transparent";
+  ta.style.webkitTextFillColor = "transparent";
+  ta.style.caretColor = typo.color || "#ffffff";
   ta.style.border = "none";
   ta.style.borderRadius = "2px";
   ta.style.padding = "0";
@@ -126,23 +144,25 @@ export function startEdit(layerId: string): void {
   ta.style.fontStyle = typo.fontStyle;
   ta.style.fontWeight = String(typo.fontWeight);
   ta.style.textAlign = typo.align;
-  ta.style.resize = "none"; // no native grip — the transformer resizes
+  ta.style.lineHeight = typo.direction === "vertical" ? "1" : "1.2";
+  ta.style.resize = "none";
   ta.style.outline = "none";
   ta.style.overflow = "hidden";
   ta.style.zIndex = "50";
-
-  // Hide only the text glyphs while editing — the textarea IS the preview.
-  // The box stays visible so the transformer stays attached and the box can
-  // be resized with real handles while typing (Photoshop behavior).
-  const node = layerTextNodes.find(function (n) {
-    return n.getAttr("layerId") === layerId;
-  });
-  if (node) {
-    const glyphs = node.findOne<Konva.Text>(".layer-text-glyphs");
-    if (glyphs) glyphs.visible(false);
+  if (typo.direction === "vertical") {
+    ta.style.writingMode = "vertical-rl";
+    ta.style.textOrientation = "upright";
+  } else {
+    ta.style.writingMode = "horizontal-tb";
+    ta.style.textOrientation = "";
   }
-  // Re-assert selection on the edited box — onToolChange() cleared
-  // _selectedLayerId when switching to the text tool, so re-attach here.
+  const rot = lay.bbox.rotation || lay.typography.rotation || 0;
+  if (rot !== 0) {
+    ta.style.transformOrigin = "center center";
+    ta.style.transform = "rotate(" + rot + "deg)";
+  }
+
+  // Glyphs stay visible — do NOT hide them (that caused the jump / double text).
   page._selectedLayerId = layerId;
   const tr = getTransformer();
   if (tr && node) {
@@ -158,13 +178,13 @@ export function startEdit(layerId: string): void {
       removeEditor(true);
     }
   });
-  // Re-center when the content wraps or collapses back to one line.
   ta.addEventListener("input", function () {
-    _fitLineHeight(ta);
+    lay.translation = ta.value;
+    if (node) refreshNodeGlyphs(node, lay, ta.value);
   });
-  ta.addEventListener("blur", function () {
-    // Clicking the transformer handles or the box edge keeps the editor
-    // open — only exit when focus leaves the text area for real.
+  ta.addEventListener("blur", function (e) {
+    const next = e.relatedTarget as Node | null;
+    if (next && (next as Element).closest?.("#type-section")) return;
     if (_pressInsideBox()) return;
     removeEditor(true);
   });
@@ -174,7 +194,6 @@ export function startEdit(layerId: string): void {
   setEditingLayerId(layerId);
   ta.focus();
   ta.select();
-  _fitLineHeight(ta);
 }
 
 /** Re-apply editing visuals after canvas.render() (zoom/pan/resize). */
@@ -186,8 +205,13 @@ export function refreshEditingState(): void {
     return n.getAttr("layerId") === id;
   });
   if (!node) return;
-  const glyphs = node.findOne<Konva.Text>(".layer-text-glyphs");
-  if (glyphs) glyphs.visible(false);
+  // Keep glyphs painted — caret overlay only.
+  node.getChildren().forEach(function (c) {
+    const n = c.name();
+    if (n === "layer-text-glyphs" || n === "layer-text-glyphs-col") {
+      c.visible(true);
+    }
+  });
   const tr = getTransformer();
   if (tr) {
     tr.nodes([node]);
@@ -196,8 +220,7 @@ export function refreshEditingState(): void {
   syncEditorBox();
 }
 
-/** Re-position/resize the editor textarea to the layer's current box —
- * called after the box is resized via the transformer while editing. */
+/** Re-position the caret overlay after box resize while editing. */
 export function syncEditorBox(): void {
   const ta = getEditor();
   const id = getEditingLayerId();
@@ -209,15 +232,27 @@ export function syncEditorBox(): void {
   });
   if (!lay) return;
   const sr = canvas.getScaleRatio();
-  const p = imgToStage(lay.bbox.x, lay.bbox.y);
+  const node = layerTextNodes.find(function (n) {
+    return n.getAttr("layerId") === id;
+  });
+  const box = node
+    ? node.findOne<Konva.Rect>(".layer-text-box")
+    : null;
+  const boxW = box ? box.width() : lay.bbox.w * sr;
+  const boxH = box ? box.height() : lay.bbox.h * sr;
+  const p = node
+    ? { x: node.x(), y: node.y() }
+    : imgToStage(lay.bbox.x, lay.bbox.y);
   ta.style.left = p.x + "px";
   ta.style.top = p.y + "px";
-  ta.style.width = Math.max(80, lay.bbox.w * sr) + "px";
-  ta.style.height = Math.max(30, lay.bbox.h * sr) + "px";
-  const fs = (lay.typography.fontSize || Math.max(8, lay.bbox.h * 0.6)) * sr;
-  ta.style.fontSize = fs + "px";
-  // Match the box rotation — spin the textarea around its center so it
-  // sits exactly over the rotated box (same geometry as the node glyphs).
+  ta.style.width = boxW + "px";
+  ta.style.height = boxH + "px";
+  const glyph = node
+    ? node.findOne<Konva.Text>(".layer-text-glyphs")
+    : null;
+  if (glyph && glyph.fontSize() > 0) {
+    ta.style.fontSize = glyph.fontSize() + "px";
+  }
   const rot = lay.bbox.rotation || lay.typography.rotation || 0;
   if (rot !== 0) {
     ta.style.transformOrigin = "center center";
@@ -225,5 +260,6 @@ export function syncEditorBox(): void {
   } else {
     ta.style.transform = "";
   }
-  _fitLineHeight(ta);
+  // Live-paint glyphs to the current box size while editing.
+  if (node) refreshNodeGlyphs(node, lay, ta.value);
 }

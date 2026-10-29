@@ -59,11 +59,10 @@ function cleanupRowHTML(page: Page): string {
     "</span>" +
     (selected
       ? '<div class="mask-opacity-line">' +
-        '<span class="mask-opacity-label">' +
-        esc(i18n.t("masks.opacity")) +
-        "</span>" +
         '<input type="range" class="cleanup-opacity" min="0" max="100" value="' +
         pct +
+        '" title="' +
+        esc(i18n.t("masks.opacity")) +
         '">' +
         '<span class="mask-opacity-value">' +
         pct +
@@ -113,11 +112,10 @@ function maskRowHTML(page: Page, mask: InpaintMask, idx: number): string {
     "</span>" +
     (selected
       ? '<div class="mask-opacity-line">' +
-        '<span class="mask-opacity-label">' +
-        esc(i18n.t("masks.opacity")) +
-        "</span>" +
         '<input type="range" class="mask-opacity" min="0" max="100" value="' +
         pct +
+        '" title="' +
+        esc(i18n.t("masks.opacity")) +
         '">' +
         '<span class="mask-opacity-value">' +
         pct +

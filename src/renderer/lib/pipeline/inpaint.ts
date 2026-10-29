@@ -12,6 +12,7 @@ import { invalidateComposite } from "../canvas/render";
 import { sidebar } from "../sidebar";
 import { models } from "../models";
 import { log } from "../logger";
+import { flushDetBboxes } from "../canvas/detection/groups";
 import type { BBox, InpaintMask } from "../../types";
 
 /** Convert a Windows path to a loadable file:// URL */
@@ -34,22 +35,45 @@ function loadImage(p: string): Promise<HTMLImageElement> {
   });
 }
 
+function boxesOverlap(a: BBox, b: BBox): boolean {
+  return !(
+    a.x + a.w <= b.x ||
+    b.x + b.w <= a.x ||
+    a.y + a.h <= b.y ||
+    b.y + b.h <= a.y
+  );
+}
+
 export const inpaint = {
-  /** Inpaint all text detection boxes of the active page → mask layers */
-  run: async function (): Promise<void> {
+  /** Inpaint text boxes of the active page → mask layers.
+   *  Default (pipeline): every detection. Pass `{ onlySelected: true }` from
+   *  the standalone Inpaint button to redo just the highlighted box. */
+  run: async function (opts?: { onlySelected?: boolean }): Promise<void> {
     const page = state.getActivePage();
     if (state.isRunning || !page) return;
     if (!page.textDetections.length) {
       ui.toast(i18n.t("toast.inpaintNoText"), "warn");
       return;
     }
+
+    flushDetBboxes();
+    const selIdx = page._selectedTextIdx;
+    const selective =
+      !!opts?.onlySelected &&
+      selIdx !== null &&
+      selIdx >= 0 &&
+      selIdx < page.textDetections.length;
+    const targetBoxes = selective
+      ? [page.textDetections[selIdx].bbox]
+      : page.textDetections.map((d) => d.bbox);
+
     state.isRunning = true;
 
     const isFirstRun = !state._inpaintLoaded;
     const loadingToast = ui.toast(
       isFirstRun
         ? i18n.t("toast.inpaintFirstRun")
-        : i18n.t("toast.inpaintRunning"),
+        : i18n.t("toast.inpaintRunning", { count: targetBoxes.length }),
       "running",
       0,
     );
@@ -58,7 +82,8 @@ export const inpaint = {
       const model = models.selectedModel("inpaint") || "lama_manga";
       log.debug(
         "fe",
-        `inpaint: start model=${model} boxes=${page.textDetections.length}`,
+        `inpaint: start model=${model} boxes=${targetBoxes.length}` +
+          (selective ? ` (selected #${selIdx + 1})` : " (all)"),
       );
       const result = await window.lumina.apiPost<{
         patches?: Array<{ bbox: BBox; imagePath: string }>;
@@ -66,7 +91,7 @@ export const inpaint = {
       }>("/inpaint", {
         imagePath: page.filePath,
         maskPath: page.maskPath ?? null,
-        boxes: page.textDetections.map((d) => d.bbox),
+        boxes: targetBoxes,
         model,
       });
       if (!result || !Array.isArray(result.patches))
@@ -77,11 +102,11 @@ export const inpaint = {
         `inpaint: done ${(result.patches || []).length} patch(es)`,
       );
       const ts = Date.now();
-      const masks: InpaintMask[] = [];
+      const newMasks: InpaintMask[] = [];
       for (let i = 0; i < result.patches.length; i++) {
         const p = result.patches[i];
         const image = await loadImage(p.imagePath);
-        masks.push({
+        newMasks.push({
           id: "mask-" + ts + "-" + i,
           bbox: p.bbox,
           imagePath: p.imagePath,
@@ -91,10 +116,21 @@ export const inpaint = {
         });
       }
 
-      // Replace previous masks (re-run = fresh set of patches).
-      // Detection boxes stay in the page model but are no longer drawn —
-      // see render.ts (overlays only while masks.length === 0).
-      page.inpaintMasks = masks;
+      if (selective) {
+        // Keep other regions; replace any mask that overlaps the selected box.
+        const kept = page.inpaintMasks.filter(function (m) {
+          return !targetBoxes.some(function (b) {
+            return boxesOverlap(m.bbox, b);
+          });
+        });
+        page.inpaintMasks = kept.concat(newMasks);
+      } else {
+        page.inpaintMasks = newMasks;
+      }
+
+      // Hide detection overlays by default — masks are the visual stand-in —
+      // but the toggle stays available for manual box edits / new boxes.
+      state.showDetBoxes = false;
       state._inpaintLoaded = true;
       invalidateComposite(page.fileName);
 
@@ -103,7 +139,7 @@ export const inpaint = {
       history.snapshot();
       ui.dismissToast(loadingToast);
       ui.toast(
-        i18n.t("toast.inpaintDone", { count: masks.length }),
+        i18n.t("toast.inpaintDone", { count: newMasks.length }),
         "success",
         3000,
       );

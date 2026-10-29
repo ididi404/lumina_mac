@@ -79,7 +79,14 @@ export function bindHoverCursor(): void {
       // Hovering interactive content → move affordance
       if (target && target !== stage && target.name() !== "bg") {
         const name = target.name();
-        if (name !== "" && name !== "bg" && state.activeTool === "select") {
+        if (
+          name !== "" &&
+          name !== "bg" &&
+          (state.activeTool === "select" ||
+            state.activeTool === "text" ||
+            state.activeTool === "lasso" ||
+            state.activeTool === "rect")
+        ) {
           cursor = "move";
         }
       }

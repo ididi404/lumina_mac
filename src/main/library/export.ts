@@ -10,6 +10,7 @@ import {
 } from "../../shared/bridge";
 import { handle, windowFromEvent } from "../core/ipc";
 import { log } from "../core/logger";
+import { t } from "../system/i18n";
 
 async function handleExport(
   event: IpcMainInvokeEvent,
@@ -17,7 +18,7 @@ async function handleExport(
 ): Promise<ExportResult> {
   if (!payload.files.length) return { canceled: false, dir: null, count: 0 };
   const res = await dialog.showOpenDialog(windowFromEvent(event)!, {
-    title: "Export Images",
+    title: t("dialog.exportImages"),
     properties: ["openDirectory", "createDirectory"],
   });
   if (res.canceled || !res.filePaths[0])

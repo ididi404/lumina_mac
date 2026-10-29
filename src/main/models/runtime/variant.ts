@@ -1,4 +1,4 @@
-/** Runtime variant — detect cuda/dml/none. */
+/** Runtime variant — detect cuda/dml/coreml/none. */
 import { app } from "electron";
 import fs from "fs";
 import path from "path";
@@ -35,11 +35,16 @@ export function installerVariant(): string {
   const has = (d: string) => fs.existsSync(path.join(d, "onnxruntime"));
   if (has(path.join(res, "ort", "cuda"))) return "cuda";
   if (has(path.join(res, "ort", "dml"))) return "dml";
+  if (has(path.join(res, "ort", "coreml"))) return "coreml";
   try {
     const manifest = JSON.parse(
       fs.readFileSync(path.join(res, "manifest.json"), "utf-8"),
     ) as { variant?: string };
-    if (manifest?.variant === "cuda" || manifest?.variant === "dml") {
+    if (
+      manifest?.variant === "cuda" ||
+      manifest?.variant === "dml" ||
+      manifest?.variant === "coreml"
+    ) {
       return manifest.variant;
     }
   } catch {
@@ -57,6 +62,8 @@ export function activeOrtDir(): string | null {
   if (has(bundledCuda)) return bundledCuda;
   const bundledDml = path.join(res, "ort", "dml");
   if (has(bundledDml)) return bundledDml;
+  const bundledCoreml = path.join(res, "ort", "coreml");
+  if (has(bundledCoreml)) return bundledCoreml;
   return null;
 }
 

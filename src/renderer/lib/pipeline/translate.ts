@@ -9,50 +9,46 @@ import { history } from "../history";
 import { canvas } from "../canvas/index";
 import { sidebar } from "../sidebar";
 import { normalizeAutoText } from "./text-norm";
+import { revealTypesetLayers } from "./reveal-text";
 import type { TextDetection } from "../../types";
 import { log } from "../logger";
+import {
+  TRANSLATE_PROVIDERS,
+  allApiKeyFields,
+  providerById,
+} from "../../../shared/translate-providers";
 
 const STORAGE_KEY = "lumina-translate";
 
-/** localStorage holds everything EXCEPT the api keys (those live in the vault) */
-type StoredConfig = Omit<
-  TranslateConfig,
-  "llmApiKey" | "openrouterApiKey" | "grokApiKey" | "geminiApiKey"
->;
+const API_KEY_FIELDS = allApiKeyFields();
 
-export interface TranslateConfig {
-  provider: "custom" | "openrouter" | "grok" | "gemini";
+/** localStorage holds everything EXCEPT the api keys (those live in the vault) */
+type StoredConfig = Omit<TranslateConfig, (typeof API_KEY_FIELDS)[number]>;
+
+/** Flat config — provider-specific key/model fields come from the catalog. */
+export type TranslateConfig = {
+  provider: string;
   targetLang: string;
   llmBaseUrl: string;
-  llmApiKey: string;
-  llmModel: string;
   llmStyle: "openai" | "anthropic";
   llmInstruction: string;
-  openrouterApiKey: string;
-  openrouterModel: string;
-  grokApiKey: string;
-  grokModel: string;
-  geminiApiKey: string;
-  geminiModel: string;
-}
+} & Record<string, string>;
 
 function defaultConfig(): TranslateConfig {
-  return {
+  const cfg: TranslateConfig = {
     provider: "gemini",
-    targetLang: "en",
+    targetLang: "zh",
     llmBaseUrl: "",
     llmApiKey: "",
     llmModel: "gpt-4o-mini",
     llmStyle: "openai",
-    // Empty = use default from prompts/translate-default.md (backend side)
     llmInstruction: "",
-    openrouterApiKey: "",
-    openrouterModel: "openai/gpt-4o-mini",
-    grokApiKey: "",
-    grokModel: "grok-3",
-    geminiApiKey: "",
-    geminiModel: "gemini-2.0-flash",
   };
+  for (const p of TRANSLATE_PROVIDERS) {
+    if (p.apiKeyField) cfg[p.apiKeyField] = "";
+    if (p.modelField && p.defaultModel) cfg[p.modelField] = p.defaultModel;
+  }
+  return cfg;
 }
 
 export const translateSettings = {
@@ -64,39 +60,35 @@ export const translateSettings = {
     } catch {
       /* keep defaults */
     }
-    // API keys are NOT in localStorage — they come from the encrypted vault
     return cfg;
   },
 
   /**
    * Persist non-secret fields to localStorage + keys to the vault.
-   * Empty key values do NOT overwrite existing vault entries — this guards
-   * against persisting a blank field (e.g. UI not yet hydrated from vault).
+   * Empty key values do NOT overwrite existing vault entries.
    */
   save(cfg: TranslateConfig): void {
-    const stored: StoredConfig = {
+    const stored: Record<string, string> = {
       provider: cfg.provider,
       targetLang: cfg.targetLang,
       llmBaseUrl: cfg.llmBaseUrl,
-      llmModel: cfg.llmModel,
       llmStyle: cfg.llmStyle,
       llmInstruction: cfg.llmInstruction,
-      openrouterModel: cfg.openrouterModel,
-      grokModel: cfg.grokModel,
-      geminiModel: cfg.geminiModel,
     };
+    for (const p of TRANSLATE_PROVIDERS) {
+      if (p.modelField && cfg[p.modelField] != null) {
+        stored[p.modelField] = cfg[p.modelField];
+      }
+    }
     localStorage.setItem(STORAGE_KEY, JSON.stringify(stored));
     if (window.lumina.setSecret) {
-      // Each provider keeps its own key — empty fields never wipe the vault
-      if (cfg.llmApiKey) window.lumina.setSecret("llmApiKey", cfg.llmApiKey);
-      if (cfg.openrouterApiKey)
-        window.lumina.setSecret("openrouterApiKey", cfg.openrouterApiKey);
-      if (cfg.grokApiKey) window.lumina.setSecret("grokApiKey", cfg.grokApiKey);
-      if (cfg.geminiApiKey)
-        window.lumina.setSecret("geminiApiKey", cfg.geminiApiKey);
+      for (const field of API_KEY_FIELDS) {
+        const val = cfg[field];
+        if (val) window.lumina.setSecret(field, val);
+      }
       log.debug(
         "fe",
-        `secrets save: custom=${cfg.llmApiKey ? "set" : "empty"} openrouter=${cfg.openrouterApiKey ? "set" : "empty"} grok=${cfg.grokApiKey ? "set" : "empty"} gemini=${cfg.geminiApiKey ? "set" : "empty"}`,
+        `secrets save: provider=${cfg.provider} keys=${API_KEY_FIELDS.filter((f) => !!cfg[f]).join(",") || "none"}`,
       );
     } else {
       log.warn(
@@ -106,32 +98,20 @@ export const translateSettings = {
     }
   },
 
-  /** Explicitly clear a stored api key */
-  async clearKey(
-    name: "llmApiKey" | "openrouterApiKey" | "grokApiKey" | "geminiApiKey",
-  ): Promise<void> {
+  async clearKey(name: string): Promise<void> {
     if (window.lumina.deleteSecret) await window.lumina.deleteSecret(name);
   },
 
   /** Full config incl. api keys — call before POST /translate */
   async loadWithSecrets(): Promise<TranslateConfig> {
     const cfg = this.load();
-    // Only fetch the vault key for the active provider to avoid
-    // repeated MISS logs and unnecessary IPC round-trips.
-    const vaultKey = (
-      {
-        custom: "llmApiKey",
-        openrouter: "openrouterApiKey",
-        grok: "grokApiKey",
-        gemini: "geminiApiKey",
-      } as const
-    )[cfg.provider];
+    const def = providerById(cfg.provider);
+    const vaultKey = def?.apiKeyField;
     if (vaultKey && window.lumina.getSecrets) {
       try {
         const secrets = await window.lumina.getSecrets([vaultKey]);
         const val = secrets[vaultKey] || "";
-        // vaultKey is always a valid TranslateConfig key
-        cfg[vaultKey as keyof TranslateConfig] = val as never;
+        cfg[vaultKey] = val;
         log.debug(
           "fe",
           `secrets load: provider=${cfg.provider} ${vaultKey}=${val ? "set" : "empty"}`,
@@ -145,11 +125,24 @@ export const translateSettings = {
 };
 
 export const translate = {
-  /** Translate all text detections of the active page */
-  run: async function (): Promise<void> {
+  /**
+   * Translate text detections of the active page.
+   * Standalone Translate button: `{ onlySelected: true }` limits to the
+   * highlighted box when one is selected; otherwise all boxes with OCR text.
+   */
+  run: async function (opts?: { onlySelected?: boolean }): Promise<void> {
     const page = state.getActivePage();
     if (state.isRunning || !page) return;
-    const withText = page.textDetections.filter(function (d) {
+    const selIdx = page._selectedTextIdx;
+    const selective =
+      !!opts?.onlySelected &&
+      selIdx !== null &&
+      selIdx >= 0 &&
+      selIdx < page.textDetections.length;
+    const candidates = selective
+      ? [page.textDetections[selIdx]]
+      : page.textDetections;
+    const withText = candidates.filter(function (d) {
       return (d.text || "").trim().length > 0;
     });
     if (!withText.length) {
@@ -165,7 +158,6 @@ export const translate = {
     );
 
     try {
-      // Full config incl. api keys from the encrypted vault
       const config = await translateSettings.loadWithSecrets();
       log.debug(
         "fe",
@@ -178,10 +170,6 @@ export const translate = {
         texts: withText.map(function (d) {
           return d.text;
         }),
-        // Full continuity context per segment: ALL preceding lines in reading
-        // order (already-translated where available), so the model can complete
-        // truncated OCR text and keep names/terms consistent — not just the
-        // immediately previous line.
         previousLines: (function () {
           const ctx: string[] = [];
           const acc: string[] = [];
@@ -191,7 +179,6 @@ export const translate = {
           });
           return ctx;
         })(),
-        // Segment type (dialogue vs narration) so the model can match register
         types: withText.map(function (d) {
           return d.type || "";
         }),
@@ -205,22 +192,20 @@ export const translate = {
         `translate: done ${(result.results || []).length} result(s)`,
       );
 
-      // Map back via identity of filtered items
       withText.forEach(function (det: TextDetection, i: number) {
         const r = (result.results || []).find(function (x) {
           return x.index === i;
         });
         if (!r) return;
-        // Fall back to the source text when the model skipped the index, so
-        // no text silently disappears from the page.
         det.translated = normalizeAutoText(r.text || "") || det.text || "";
-        // Mirror into the unified layer model
         const detIdx = page.textDetections.indexOf(det);
         const layer = page.layers[detIdx];
         if (layer && layer.type === "text-dialogue")
           layer.translation = det.translated;
       });
 
+      // Hand canvas to typeset text boxes (pipeline does this after inpaint).
+      revealTypesetLayers();
       canvas.render();
       sidebar.render();
       history.snapshot();
@@ -262,7 +247,6 @@ export const translate = {
     );
 
     try {
-      // Continuity context: ALL preceding dialogue lines in reading order
       let prev: string[] = [];
       for (let k = i - 1; k >= 0; k--) {
         const p = page.layers[k];
@@ -287,11 +271,11 @@ export const translate = {
 
       const translated = normalizeAutoText(result.results[0].text || "");
       layer.translation = translated;
-      // Mirror into the parallel detection model
       if (layer.type === "text-dialogue" && i < page.textDetections.length) {
         page.textDetections[i].translated = translated;
       }
 
+      revealTypesetLayers();
       canvas.render();
       sidebar.render();
       history.snapshot();

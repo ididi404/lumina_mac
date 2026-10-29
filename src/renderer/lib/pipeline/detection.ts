@@ -76,13 +76,16 @@ export const detection = {
           bbox: Object.assign({}, d.bbox),
           source: d.text || "",
           translation: d.translated || "",
-          // New dialogue layers inherit the global type defaults; the
-          // detected glyph color + slant override the defaults when available.
+          // New dialogue layers inherit the global type defaults; glyph
+          // color overrides when available. Do NOT apply textAngle as
+          // box rotation — detection boxes are axis-aligned AABBs, and
+          // AngleNet/PCA slant is too noisy to spin the whole layer.
           typography: Object.assign(
             defaultTypography(),
             loadGlobalTypography(),
             d.textColor ? { color: d.textColor } : {},
-            typeof d.textAngle === "number" ? { rotation: d.textAngle } : {},
+            // Product defaults — ignore stale global left-align / locked size.
+            { fontSize: null, align: "center" },
           ),
           visible: true,
           opacity: 1,

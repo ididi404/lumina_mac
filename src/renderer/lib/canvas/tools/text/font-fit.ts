@@ -72,24 +72,24 @@ function measureMultiline(
 const PRESET_BIG_SHORT: TextFitPreset = {
   maxFont: 86,
   minFont: 10,
-  widthUsageRatio: 0.85,
-  heightUsageRatio: 0.78,
+  widthUsageRatio: 0.96,
+  heightUsageRatio: 0.9,
   fontScale: 0.95,
   spacingRatio: 0.055,
 };
 const PRESET_BIG_MED: TextFitPreset = {
   maxFont: 82,
   minFont: 10,
-  widthUsageRatio: 0.82,
-  heightUsageRatio: 0.78,
+  widthUsageRatio: 0.96,
+  heightUsageRatio: 0.9,
   fontScale: 0.94,
   spacingRatio: 0.06,
 };
 const PRESET_DEFAULT: TextFitPreset = {
   maxFont: 76,
   minFont: 8,
-  widthUsageRatio: 0.76,
-  heightUsageRatio: 0.76,
+  widthUsageRatio: 0.96,
+  heightUsageRatio: 0.9,
   fontScale: 0.92,
   spacingRatio: 0.075,
 };
@@ -106,33 +106,37 @@ export function selectPreset(
   else if (isBigBox && charCount <= 55) preset = PRESET_BIG_MED;
   else preset = PRESET_DEFAULT;
 
-  // ── Adaptive usage ratios based on aspect ratio ──
-  // Tall boxes have more height than width → use more width, less height.
-  // Wide boxes are the opposite.
+  // Tall / wide boxes only nudge height usage; keep width near full so
+  // centered text doesn't sit in a huge left/right gutter.
   const aspect = boxHeight / Math.max(1, boxWidth);
+  let out: TextFitPreset = preset;
   if (aspect > 1.5) {
-    // Tall: lerp width up to 0.92, height down to 0.65
     const t = Math.min(1, (aspect - 1.5) / 1.5); // 0→1 as aspect 1.5→3.0
-    return {
+    out = {
       ...preset,
-      widthUsageRatio:
-        preset.widthUsageRatio + t * (0.92 - preset.widthUsageRatio),
+      widthUsageRatio: Math.min(0.98, preset.widthUsageRatio + t * 0.02),
       heightUsageRatio:
-        preset.heightUsageRatio - t * (preset.heightUsageRatio - 0.65),
+        preset.heightUsageRatio - t * (preset.heightUsageRatio - 0.78),
     };
-  }
-  if (aspect < 0.7) {
-    // Wide: lerp width down to 0.65, height up to 0.92
+  } else if (aspect < 0.7) {
     const t = Math.min(1, (0.7 - aspect) / 0.5); // 0→1 as aspect 0.7→0.2
-    return {
+    out = {
       ...preset,
-      widthUsageRatio:
-        preset.widthUsageRatio - t * (preset.widthUsageRatio - 0.65),
+      widthUsageRatio: Math.max(0.92, preset.widthUsageRatio - t * 0.04),
       heightUsageRatio:
-        preset.heightUsageRatio + t * (0.92 - preset.heightUsageRatio),
+        preset.heightUsageRatio + t * (0.96 - preset.heightUsageRatio),
     };
   }
-  return preset;
+  // maxFont must scale with the box — a fixed 76/86 ceiling made autofit
+  // stop growing when the user resized the frame larger.
+  const heightCap = Math.max(
+    out.minFont,
+    Math.floor(boxHeight * out.heightUsageRatio),
+  );
+  return {
+    ...out,
+    maxFont: Math.max(out.maxFont, heightCap),
+  };
 }
 
 // ── Word wrap (horizontal) ──
@@ -160,9 +164,24 @@ export function wordWrap(
   typo: Typography,
   maxWidth: number,
 ): string[] {
-  // No spaces + CJK → wrap per character
-  if (!/\s/.test(text) && CJK_RE.test(text)) {
-    return Array.from(text);
+  // CJK / no-space text: wrap by measured width (char-by-char), NOT one
+  // char per line — that made horizontal Chinese look vertical.
+  if (!/\s/.test(text.replace(/\n/g, "")) && CJK_RE.test(text)) {
+    const lines: string[] = [];
+    for (const para of text.split("\n")) {
+      let current = "";
+      for (const ch of Array.from(para)) {
+        const test = current + ch;
+        if (current && measureLineWidth(test, size, typo) > maxWidth) {
+          lines.push(current);
+          current = ch;
+        } else {
+          current = test;
+        }
+      }
+      lines.push(current);
+    }
+    return lines.length ? lines : [""];
   }
   const lines: string[] = [];
   for (const para of text.split("\n")) {
@@ -262,9 +281,49 @@ export function fitHorizontal(
 
 // ── Vertical CJK variant ──
 
-const JP_PUNCT = new Set(["。", "、", "."]);
-const CHOOMPU = "ー";
-const CHOOMPU_VERT = "\uFE31"; // ︱ vertical form
+/** Horizontal punctuation → Unicode vertical presentation forms. */
+const VERTICAL_CHAR: Record<string, string> = {
+  "。": "\uFE12", // ︒
+  "、": "\uFE11", // ︑
+  "，": "\uFE10", // ︐
+  "：": "\uFE13", // ︓
+  "；": "\uFE14", // ︔
+  "！": "\uFE15", // ︕
+  "？": "\uFE16", // ︖
+  "…": "\uFE19", // ︙
+  "⋯": "\uFE19",
+  "ー": "\uFE31", // ︱ chōonpu
+  "−": "\uFE31",
+  "—": "\uFE31",
+  "―": "\uFE31",
+  "‐": "\uFE31",
+  "ｰ": "\uFE31",
+  "（": "\uFE35", // ︵
+  "）": "\uFE36", // ︶
+  "〔": "\uFE39", // ︹
+  "〕": "\uFE3A", // ︺
+  "【": "\uFE3B", // ︻
+  "】": "\uFE3C", // ︼
+  "《": "\uFE3D", // ︽
+  "》": "\uFE3E", // ︾
+  "〈": "\uFE3F", // ︿
+  "〉": "\uFE40", // ﹀
+  "「": "\uFE41", // ﹁
+  "」": "\uFE42", // ﹂
+  "『": "\uFE43", // ﹃
+  "』": "\uFE44", // ﹄
+  "〖": "\uFE17", // ︗
+  "〗": "\uFE18", // ︘
+  "〘": "\uFE39",
+  "〙": "\uFE3A",
+  "｢": "\uFE41",
+  "｣": "\uFE42",
+};
+
+/** Map one character to its vertical-layout glyph when one exists. */
+export function toVerticalChar(ch: string): string {
+  return VERTICAL_CHAR[ch] || ch;
+}
 
 function chunkText(text: string, chunkSize: number): string[][] {
   const cols: string[][] = [];
@@ -336,16 +395,14 @@ export function fitVerticalCjk(
   };
 }
 
-/** Main entry — pick variant by content */
+/** Main entry — respect explicit typography.direction (never auto-guess). */
 export function fitTextToBox(
   text: string,
   boxWidth: number,
   boxHeight: number,
   typo: Typography,
 ): TextFitResult & { variant: "horizontal" | "vertical-cjk" } {
-  const hasCjk = CJK_RE.test(text);
-  const noSpaces = !/\s/.test(text.replace(/\n/g, ""));
-  if (hasCjk && noSpaces) {
+  if (typo.direction === "vertical") {
     return Object.assign(fitVerticalCjk(text, boxWidth, boxHeight), {
       variant: "vertical-cjk" as const,
     });
@@ -353,4 +410,20 @@ export function fitTextToBox(
   return Object.assign(fitHorizontal(text, boxWidth, boxHeight, typo), {
     variant: "horizontal" as const,
   });
+}
+
+/** Layout vertical CJK into right-to-left columns of top-to-bottom chars. */
+export function layoutVerticalColumns(
+  text: string,
+  fontSize: number,
+  boxW: number,
+  boxH: number,
+): string[][] {
+  const clean = text.replace(/[\s\n]/g, "");
+  if (!clean) return [];
+  const perCol = Math.max(1, Math.floor(boxH / Math.max(1, fontSize)));
+  const cols = chunkText(clean, perCol);
+  // Drop columns that would overflow width (keep what fits).
+  const maxCols = Math.max(1, Math.floor(boxW / Math.max(1, fontSize)));
+  return cols.slice(0, maxCols);
 }

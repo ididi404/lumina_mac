@@ -2,7 +2,8 @@
 
 Uses ctypes for native memory queries:
 - CUDA: NVIDIA NVML (dedicated VRAM)
-- DML/CPU: Win32 GlobalMemoryStatusEx (system RAM)
+- Windows: Win32 GlobalMemoryStatusEx (system RAM)
+- macOS: mach host_statistics64 (system RAM; CoreML/Metal shares it)
 
 Falls back gracefully when native APIs are unavailable.
 """
@@ -137,8 +138,8 @@ class _MemoryStatusEx(ctypes.Structure):
     ]
 
 
-def _query_ram() -> Optional[float]:
-    """Return system RAM usage ratio [0..1], or None if unavailable."""
+def _query_ram_win32() -> Optional[float]:
+    """Return system RAM usage ratio [0..1] on Windows."""
     if sys.platform != "win32":
         return None
     try:
@@ -152,6 +153,99 @@ def _query_ram() -> Optional[float]:
         return stat.dwMemoryLoad / 100.0
     except Exception:
         return None
+
+
+def _query_ram_macos() -> Optional[float]:
+    """Return system RAM usage ratio [0..1] on macOS via host_statistics64."""
+    if sys.platform != "darwin":
+        return None
+    try:
+        libc = ctypes.CDLL(ctypes.util.find_library("c"), use_errno=True)
+
+        class VMStatistics64(ctypes.Structure):
+            _fields_ = [
+                ("free_count", ctypes.c_uint),
+                ("active_count", ctypes.c_uint),
+                ("inactive_count", ctypes.c_uint),
+                ("wire_count", ctypes.c_uint),
+                ("zero_fill_count", ctypes.c_uint64),
+                ("reactivations", ctypes.c_uint64),
+                ("pageins", ctypes.c_uint64),
+                ("pageouts", ctypes.c_uint64),
+                ("faults", ctypes.c_uint64),
+                ("cow_faults", ctypes.c_uint64),
+                ("lookups", ctypes.c_uint64),
+                ("hits", ctypes.c_uint64),
+                ("purges", ctypes.c_uint64),
+                ("purgeable_count", ctypes.c_uint),
+                ("speculative_count", ctypes.c_uint),
+                ("decompressions", ctypes.c_uint64),
+                ("compressions", ctypes.c_uint64),
+                ("swapins", ctypes.c_uint64),
+                ("swapouts", ctypes.c_uint64),
+                ("compressor_page_count", ctypes.c_uint),
+                ("throttled_count", ctypes.c_uint),
+                ("external_page_count", ctypes.c_uint),
+                ("internal_page_count", ctypes.c_uint),
+                ("total_uncompressed_pages_in_compressor", ctypes.c_uint64),
+            ]
+
+        HOST_VM_INFO64 = 4
+        HOST_VM_INFO64_COUNT = ctypes.sizeof(VMStatistics64) // ctypes.sizeof(
+            ctypes.c_int
+        )
+
+        libc.mach_host_self.restype = ctypes.c_uint
+        host = libc.mach_host_self()
+
+        stats = VMStatistics64()
+        count = ctypes.c_uint(HOST_VM_INFO64_COUNT)
+        libc.host_statistics64.argtypes = [
+            ctypes.c_uint,
+            ctypes.c_int,
+            ctypes.POINTER(VMStatistics64),
+            ctypes.POINTER(ctypes.c_uint),
+        ]
+        libc.host_statistics64.restype = ctypes.c_int
+        if (
+            libc.host_statistics64(
+                host, HOST_VM_INFO64, ctypes.byref(stats), ctypes.byref(count)
+            )
+            != 0
+        ):
+            return None
+
+        page_size = ctypes.c_ulong(0)
+        libc.host_page_size.argtypes = [
+            ctypes.c_uint,
+            ctypes.POINTER(ctypes.c_ulong),
+        ]
+        libc.host_page_size.restype = ctypes.c_int
+        if (
+            libc.host_page_size(host, ctypes.byref(page_size)) != 0
+            or page_size.value == 0
+        ):
+            return None
+
+        used_pages = (
+            stats.wire_count + stats.active_count + stats.compressor_page_count
+        )
+        total_bytes = os.sysconf("SC_PHYS_PAGES") * page_size.value
+        if total_bytes <= 0:
+            return None
+        used_bytes = used_pages * page_size.value
+        return min(1.0, used_bytes / total_bytes)
+    except Exception:
+        return None
+
+
+def _query_ram() -> Optional[float]:
+    """Return system RAM usage ratio [0..1], or None if unavailable."""
+    if sys.platform == "win32":
+        return _query_ram_win32()
+    if sys.platform == "darwin":
+        return _query_ram_macos()
+    return None
 
 
 # ---------------------------------------------------------------------------

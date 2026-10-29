@@ -1,6 +1,8 @@
 """Google Gemini batch translation."""
 from __future__ import annotations
 
+import socket
+
 from .._base import (
     TranslateError,
     build_batch_prompt,
@@ -11,13 +13,15 @@ from .._base import (
 from utils.logger import log
 
 _API_BASE = "https://generativelanguage.googleapis.com/v1beta"
+# Free-tier friendly default (GA). gemini-2.0-flash shut down 2026-06-01.
+_DEFAULT_MODEL = "gemini-3.5-flash-lite"
 
 
 def translate_batch(
     texts: list[str], target: str, config: dict
 ) -> list[str]:
-    api_key = config.get("geminiApiKey") or ""
-    model = config.get("geminiModel") or "gemini-3.5-flash-lite"
+    api_key = (config.get("geminiApiKey") or "").strip()
+    model = (config.get("geminiModel") or _DEFAULT_MODEL).strip()
     if not api_key:
         raise TranslateError("Gemini API key not configured")
 
@@ -42,7 +46,20 @@ def translate_batch(
     }
     try:
         result = http_post_json(url, body)
+    except TranslateError:
+        raise
+    except (TimeoutError, socket.timeout) as e:
+        raise TranslateError(
+            "Gemini timed out reaching generativelanguage.googleapis.com — "
+            "check network / VPN (this endpoint is often blocked in CN)"
+        ) from e
     except Exception as e:
+        msg = str(e)
+        if "timed out" in msg.lower() or "timeout" in msg.lower():
+            raise TranslateError(
+                "Gemini timed out reaching generativelanguage.googleapis.com — "
+                "check network / VPN (this endpoint is often blocked in CN)"
+            ) from e
         raise TranslateError(f"Gemini request failed: {e}") from e
 
     candidates = result.get("candidates") or []

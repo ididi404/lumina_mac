@@ -15,8 +15,15 @@
     "dev": "npm run build && electron dist/main/main.js",
     "bundle:dml": "node scripts/bundle.mjs --variant=dml",
     "bundle:cuda": "node scripts/bundle.mjs --variant=cuda",
+    "bundle:macos": "node scripts/bundle-macos.mjs",
+    "bundle:macos:arm64": "node scripts/bundle-macos.mjs --arch=arm64",
+    "bundle:macos:x64": "node scripts/bundle-macos.mjs --arch=x64",
     "dist:dml": "npm run build && npm run bundle:dml && electron-builder --config scripts/electron-builder.config.mjs --publish never",
     "dist:cuda": "npm run build && npm run bundle:cuda && electron-builder --config scripts/electron-builder.config.cuda.mjs --publish never",
+    "dist:macos": "npm run build && npm run bundle:macos && LUMINA_MAC_ARCH=${npm_config_arch:-$(uname -m | sed 's/x86_64/x64/;s/arm64/arm64/')} electron-builder --config scripts/electron-builder.config.macos.mjs --mac --publish never",
+    "dist:macos:arm64": "npm run build && npm run bundle:macos:arm64 && LUMINA_MAC_ARCH=arm64 electron-builder --config scripts/electron-builder.config.macos.mjs --mac --arm64 --publish never",
+    "dist:macos:x64": "npm run build && npm run bundle:macos:x64 && LUMINA_MAC_ARCH=x64 electron-builder --config scripts/electron-builder.config.macos.mjs --mac --x64 --publish never",
+    "dist:macos:all": "npm run dist:macos:arm64 && npm run dist:macos:x64",
     "dist:all": "npm run build && npm run bundle:dml && npm run bundle:cuda && electron-builder --config scripts/electron-builder.config.mjs --publish never && electron-builder --config scripts/electron-builder.config.cuda.mjs --publish never"
   },
   "dependencies": {

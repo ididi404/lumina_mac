@@ -42,13 +42,19 @@ function resolveLaunch(): PythonLaunch {
     const res = process.resourcesPath;
     const pyRoot = path.join(res, "python");
     const pyApp = path.join(res, "backend");
-    const sitePkgs = path.join(pyRoot, "Lib", "site-packages");
+    const isMac = process.platform === "darwin";
+    // Windows embeddable: Lib/site-packages; macOS standalone: lib/python3.x/site-packages
+    const sitePkgs = isMac
+      ? path.join(pyRoot, "lib", "python3.13", "site-packages")
+      : path.join(pyRoot, "Lib", "site-packages");
     const ortDir = activeOrtDir();
     const extra = ortDir ? [ortDir, sitePkgs] : [sitePkgs];
     return {
       dir: pyApp,
       entry: path.join(pyApp, "run_backend.py"),
-      executable: path.join(pyRoot, "python.exe"),
+      executable: isMac
+        ? path.join(pyRoot, "bin", "python3")
+        : path.join(pyRoot, "python.exe"),
       pythonPath: extra.join(path.delimiter),
     };
   }

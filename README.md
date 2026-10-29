@@ -169,22 +169,28 @@ Translation is the only step that calls an external AI API — everything else (
 
 Lumina uses ONNX Runtime with GPU support where available.
 
-- **One execution provider per environment.** The DirectML and CUDA wheels cannot coexist in a single Python environment. Two installers ship, one per provider: the universal DirectML installer and the NVIDIA-only CUDA installer (see [Installers](#installers)).
-- **`LUMINA_EP` environment variable** overrides the runtime preference: `auto` (CUDA → DirectML → CPU, falling back per wheel), `cuda` (CUDA, falling back to CPU — never DirectML), `dml`, or `cpu`.
-- **Per-model preferences** are baked into each model's configuration. Some models cannot run on certain providers: `lama` is CPU-only (GPU acceleration is ignored when enabled), `lama_manga` and `paddleocr_vl` never use DirectML (CUDA when available, otherwise CPU), and some OCR models keep their autoregressive decoder on CPU regardless of the chosen provider.
+- **One execution provider per environment.** DirectML, CUDA, and CoreML wheels cannot coexist in a single Python environment. Installers ship per platform/provider (see [Installers](#installers)).
+- **macOS uses CoreML → Metal.** Official ONNX Runtime has no separate `MetalExecutionProvider`; Apple GPU / Neural Engine acceleration is `CoreMLExecutionProvider` (Metal under the hood). Set `LUMINA_EP=coreml` or `metal` to force it.
+- **`LUMINA_EP` environment variable** overrides the runtime preference: `auto` (CUDA → CoreML → DirectML → CPU), `cuda`, `dml`, `coreml` / `metal`, or `cpu`.
+- **Per-model preferences** are baked into each model's configuration. Some models cannot run on certain providers: `lama` is CPU-only (GPU acceleration is ignored when enabled), `lama_manga` and `paddleocr_vl` never use DirectML (CUDA or CoreML when available, otherwise CPU), and some OCR models keep their autoregressive decoder on CPU regardless of the chosen provider.
 
 ## Installers
 
-Two Windows installers ship, one per execution provider:
+**Windows** — two installers, one per execution provider:
 
 - **`Lumina-Setup-DML-<version>.exe`** — DirectML (CPU + DirectML), universal: runs on any DirectX 12 GPU — including NVIDIA — and falls back to CPU on machines without a compatible GPU. Choose this if you don't have an NVIDIA RTX/GTX card.
 - **`Lumina-Setup-CUDA-<version>.exe`** — CUDA 12, NVIDIA-only. **Highly recommended over the DML installer if you have an NVIDIA RTX/GTX card** — it's noticeably faster. Requires an NVIDIA GPU with a reasonably recent driver.
+
+**macOS** — CoreML / Metal builds, one artifact per CPU architecture (native onnxruntime wheels are arch-specific):
+
+- **`Lumina-<version>-mac-arm64.dmg`** — Apple Silicon (M1/M2/M3/M4…)
+- **`Lumina-<version>-mac-x64.dmg`** — Intel Mac (also runs on Apple Silicon via Rosetta)
 
 Both are published as a release on the [Releases](https://github.com/lumina-tl/lumina/releases) page, together with their update feed files. Each variant uses its own update channel, so a DML install only ever updates from DML artifacts and a CUDA install only from CUDA artifacts. Updates are differential — the app downloads only the parts that changed, not the whole installer — and install on launch, so a one-time install is usually all that's needed. Release notes are taken from the matching `## [<version>]` section in [CHANGELOG.md](CHANGELOG.md); if that section is missing, notes are generated from the commits.
 
 > **CUDA note:** starting with v0.3.0, the CUDA installer no longer bundles the ~1.4 GB ONNX Runtime — the app downloads it once into your user folder on first run (shown in Settings → Models) and verifies it before use. That keeps the installer small and makes every update after this one a small differential download. If you update from an older CUDA version, this first launch downloads the runtime once; later updates won't re-download it. DML installs are unaffected — the runtime is still bundled in that installer.
 
-When running from source, pick the provider wheel yourself: `onnxruntime-directml` for universal GPU support, or `onnxruntime-gpu[cuda,cudnn]` for NVIDIA CUDA (see [Development](#development)), then start the app with `npm start`.
+When running from source, pick the provider wheel yourself: `onnxruntime` on macOS (CoreML/Metal), `onnxruntime-directml` on Windows for universal GPU, or `onnxruntime-gpu[cuda,cudnn]` for NVIDIA CUDA (see [Development](#development)), then start the app with `npm start`.
 
 ## Project File Format (.lmi)
 
@@ -197,22 +203,36 @@ A `.lmi` file is a zip archive containing a `project.json` manifest plus the pag
 - Node.js (for Electron, esbuild, TypeScript)
 - Python 3.13
 - A GPU execution provider, if GPU acceleration is wanted:
-  - NVIDIA: CUDA-enabled driver plus the `onnxruntime-gpu[cuda,cudnn]` wheel
-  - Otherwise: the `onnxruntime-directml` wheel (any GPU) or plain CPU
+  - **macOS:** Metal-capable GPU; `onnxruntime` wheel (CoreML EP)
+  - **Windows NVIDIA:** CUDA-enabled driver plus `onnxruntime-gpu[cuda,cudnn]`
+  - **Windows other:** `onnxruntime-directml` (any DirectX 12 GPU) or plain CPU
 - Model files placed in the models directory (or downloaded through Settings → Models once the app runs)
 
 ### Setup
 
 ```sh
 # Python backend
-python -m venv venv
-venv\Scripts\pip install -r python\requirements.txt   # Windows
-# source venv/bin/activate && pip install -r python/requirements.txt  # macOS/Linux
+python3.13 -m venv venv
+# Windows:
+venv\Scripts\pip install -r python\requirements.txt
+# macOS / Linux:
+source venv/bin/activate && pip install -r python/requirements.txt
 
 # Frontend
 npm install
 npm run build
 npm start
+```
+
+### macOS packaging
+
+```sh
+# Native arch DMG (CoreML / Metal)
+npm run dist:macos
+
+# Or build both architectures explicitly:
+npm run dist:macos:arm64
+npm run dist:macos:x64
 ```
 
 The backend is started automatically by the Electron main process; no separate server setup is needed.

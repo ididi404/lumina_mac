@@ -1,0 +1,10 @@
+# onnxruntime for macOS (arm64 + x86_64). Includes CoreMLExecutionProvider,
+# which accelerates via Metal GPU and Apple Neural Engine.
+# Downloaded by scripts/bundle-macos.mjs into build/wheels-macos-<arch>.
+onnxruntime==1.23.2
+flatbuffers==25.12.19
+mpmath==1.3.0
+numpy==2.5.4
+packaging==26.3
+protobuf==7.36.2
+sympy==1.14.0

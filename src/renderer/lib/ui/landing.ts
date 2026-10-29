@@ -84,7 +84,9 @@ function _grid(
 function _html(data: RecentsData): string {
   return (
     '<div class="landing-inner">' +
-    '<h1 class="landing-title">Lumina</h1>' +
+    '<h1 class="landing-title">' +
+    _esc(i18n.t("landing.title")) +
+    "</h1>" +
     '<p class="landing-subtitle">' +
     _esc(i18n.t("landing.subtitle")) +
     "</p>" +

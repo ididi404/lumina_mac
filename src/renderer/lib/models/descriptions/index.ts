@@ -1,7 +1,7 @@
-/** Model description registry — bilingual (en/id) copy per model id. */
+/** Model description registry — bilingual (en/zh) copy per model id. */
 export interface ModelDesc {
   en: string;
-  id: string;
+  zh: string;
 }
 
 export type ModelDescMap = Record<string, ModelDesc>;
@@ -21,7 +21,7 @@ const ALL: ModelDescMap = {
 export function describe(id: string, lang: string): string {
   const d = ALL[id];
   if (!d) return "";
-  if (lang === "id") return d.id;
+  if (lang === "zh") return d.zh;
   return d.en;
 }
 

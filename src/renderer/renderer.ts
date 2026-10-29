@@ -43,8 +43,10 @@ setRendererImport(importImages);
 // ── Model check on startup (CHECK ONLY — downloads are manual) ──
 function checkModels(): void {
   models.refreshDevice();
-  models.check().then(function (list) {
-    if (list.length && list.some((m) => !m.ready)) {
+  models.check().then(function () {
+    // Warn only when a *selected* pipeline model is missing — the catalog
+    // always lists unused alternatives (and aux) that stay undownloaded.
+    if (!models.allReady()) {
       ui.toast(i18n.t("models.warning"), "warn", 6000);
     }
   });
@@ -168,6 +170,9 @@ i18n.init().then(function () {
     .addEventListener("click", function () {
       project.saveAs();
     });
+  document.getElementById("btn-close")!.addEventListener("click", function () {
+    void project.close();
+  });
   document.getElementById("btn-export")!.addEventListener("click", function () {
     exportModule.open();
   });
@@ -205,7 +210,18 @@ i18n.init().then(function () {
   document
     .getElementById("btn-toggle-boxes")!
     .addEventListener("click", function () {
-      L.state.showDetBoxes = !L.state.showDetBoxes;
+      const next = !L.state.showDetBoxes;
+      L.state.showDetBoxes = next;
+      // Entering det-box mode clears any red text-layer selection — only the
+      // just-created free-text exception applies while it stays selected.
+      if (next) {
+        const page = L.state.getActivePage();
+        if (page) {
+          page._selectedLayerId = null;
+          page._expandedLayerId = null;
+          page._selectedTextIdx = null;
+        }
+      }
       canvas.updateBoxToggle();
       canvas.render();
     });

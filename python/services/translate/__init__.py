@@ -1,30 +1,32 @@
-"""Translation provider registry."""
+"""Translation provider registry — discovers modules; presets from catalog."""
 from __future__ import annotations
 
 import importlib
 from typing import Callable
 
 from ._base import TranslateError
+from .provider.catalog import OPENAI_PRESETS
 from utils.logger import log
 
 ProviderFn = Callable[[str, str, dict], str]
 BatchFn = Callable[[list[str], str, dict], list[str]]
 
+# Module name per provider id. OpenAI-compatible presets share openai_preset.
 _PROVIDERS: dict[str, str] = {
     "custom": "custom",
-    "openrouter": "openrouter",
-    "grok": "grok",
     "gemini": "gemini",
+    **{name: "openai_preset" for name in OPENAI_PRESETS},
 }
 
 _loaded: dict[str, object] = {}
 
 
 def _provider_module(name: str):
-    mod = _loaded.get(name)
+    mod_name = _PROVIDERS[name]
+    mod = _loaded.get(mod_name)
     if mod is None:
-        mod = importlib.import_module(f".provider.{name}", __package__)
-        _loaded[name] = mod
+        mod = importlib.import_module(f".provider.{mod_name}", __package__)
+        _loaded[mod_name] = mod
     return mod
 
 
@@ -40,6 +42,11 @@ def _provider_name(config: dict) -> str:
     name = (config.get("provider") or "").lower()
     # Legacy key — the generic provider was renamed llm -> custom
     return "custom" if name == "llm" else name
+
+
+def list_providers() -> list[str]:
+    """Registered provider ids (for diagnostics / future UI sync)."""
+    return sorted(_PROVIDERS)
 
 
 def translate_text(text: str, config: dict) -> str:
@@ -84,7 +91,6 @@ def translate_texts(texts: list[str], config: dict) -> list[str]:
         for (i, t) in non_empty:
             seg_config = config
             if prev_lines:
-                # Single-call mode: the provider reads previousLines[0]
                 seg_config = {**config, "previousLines": [prev_lines[i]]}
             if types:
                 seg_config = {**seg_config, "types": [types[i]]}
@@ -98,6 +104,7 @@ def translate_texts(texts: list[str], config: dict) -> list[str]:
 
 __all__ = [
     "TranslateError",
+    "list_providers",
     "translate_text",
     "translate_texts",
 ]

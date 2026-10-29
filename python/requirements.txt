@@ -1,6 +1,11 @@
 fastapi>=0.100.0
 uvicorn>=0.23.0
-onnxruntime-gpu[cuda,cudnn]==1.24.4
+# Platform-specific ONNX Runtime:
+# - Windows CUDA: onnxruntime-gpu
+# - Windows DirectML: install onnxruntime-directml instead (see README)
+# - macOS: onnxruntime (includes CoreML → Metal / Neural Engine)
+onnxruntime-gpu[cuda,cudnn]==1.24.4; sys_platform == "win32"
+onnxruntime==1.23.2; sys_platform == "darwin"
 numpy>=1.24.0
 PyYAML>=6.0.0
 Pillow>=10.0.0

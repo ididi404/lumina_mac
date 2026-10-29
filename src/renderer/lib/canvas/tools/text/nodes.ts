@@ -4,7 +4,6 @@ import { state } from "../../../state";
 import { canvas } from "../../index";
 import { sidebar } from "../../../sidebar";
 import { history } from "../../../history";
-import { tools } from "../../../ui/tools";
 import {
   layerTextNodes,
   isEditing,
@@ -26,6 +25,39 @@ import {
 import { getEditor } from "./shared";
 import { startEdit, syncEditorBox, refreshEditingState } from "./editor";
 
+/**
+ * Hit-test layer text for Move / Text (or while editing).
+ *
+ * Det-box mode: green boxes own picks — EXCEPT the free-text layer that is
+ * still selected right after create (move until blank-click deselects; then
+ * it cannot be re-selected while det boxes stay on).
+ */
+function _canSelectObjects(tool: string): boolean {
+  return (
+    tool === "select" ||
+    tool === "text" ||
+    tool === "lasso" ||
+    tool === "rect"
+  );
+}
+
+function layerTextListening(layerId: string, layerType: string): boolean {
+  if (isEditing() && getEditingLayerId() === layerId) return true;
+  if (isEditing()) return false;
+  const t = state.activeTool;
+  if (!_canSelectObjects(t)) return false;
+  // Det-box mode: green overlays own picks for unselected dialogue, but a
+  // selected text layer (from the sidebar or after OCR) must still receive
+  // hits so its red handles / drag work.
+  if (state.showDetBoxes) {
+    const page = state.getActivePage();
+    if (!page) return false;
+    if (page._selectedLayerId === layerId) return true;
+    return layerType === "text-free";
+  }
+  return true;
+}
+
 /** Rebuild all layer text nodes on stage (one Konva.Text per layer). */
 export function renderLayerTextNodes(): void {
   const konvaLayer = canvas.getLayer();
@@ -42,46 +74,49 @@ export function renderLayerTextNodes(): void {
     .reverse()
     .forEach(function (lay) {
       if (!lay.visible) return;
-      // OCR/translation of dialogue layers only appears after inpainting —
-      // before that the canvas shows the untouched original + boxes.
-      if (lay.type === "text-dialogue" && page.inpaintMasks.length === 0)
-        return;
+      if (lay.type !== "text-dialogue" && lay.type !== "text-free") return;
+      // Det-box mode: green overlays own the canvas. Painting dialogue text
+      // layers on top hid the 2px selection stroke (only visible while the
+      // green box was dragged out from under the pink frame).
+      if (lay.type === "text-dialogue" && state.showDetBoxes) return;
       const text = lay.translation || lay.source || "";
-      if (!text) return;
       const node = makeNode(lay, text);
+      node.listening(layerTextListening(lay.id, lay.type));
+      const selectThis = function (): void {
+        if (page._selectedLayerId === lay.id) {
+          syncTransformerSelection();
+          return;
+        }
+        canvas.selectLayer(lay.id);
+        syncTransformerSelection();
+        canvas.getLayer()?.draw();
+      };
+      // Select on press so a drag starts already in selected state.
+      node.on("mousedown touchstart", function (e) {
+        if (isEditing()) return;
+        if (!_canSelectObjects(state.activeTool)) return;
+        e.cancelBubble = true;
+        selectThis();
+      });
       node.on("click tap", function (e) {
         e.cancelBubble = true;
         if (isEditing()) return;
-        // Paint tools own the pointer — brush/eraser/bucket/eyedropper must
-        // never select text layers underneath.
-        const t = state.activeTool;
-        if (
-          t === "brush" ||
-          t === "eraser" ||
-          t === "bucket" ||
-          t === "eyedropper"
-        )
-          return;
+        if (!_canSelectObjects(state.activeTool)) return;
         const now = Date.now();
         if (now - (_lastClickAt[lay.id] || 0) < 350) {
-          // Double-click → edit in place (switching to the text tool first).
           delete _lastClickAt[lay.id];
-          if (state.activeTool !== "text") tools.setActive("text");
           startEdit(lay.id);
-          // Also expand the sidebar editor for this layer.
           canvas.expandLayer(lay.id);
           return;
         }
         _lastClickAt[lay.id] = now;
-        // Click = select (shows transform handles).
-        canvas.selectLayer(lay.id);
-        syncTransformerSelection();
-        canvas.getLayer()?.draw();
+        selectThis();
+      });
+      node.on("dragstart", function () {
+        selectThis();
       });
       node.on("dragend", function () {
-        // Dragging moves the whole group; node.x()/y() is its local top-left
-        // (already rotated with the group) — commit directly. Using the AABB
-        // would shift the box for non-cardinal rotations.
+        // x/y is local top-left (same model as Transformer).
         const img = stageToImg(node.x(), node.y());
         const target = page.layers.find(function (l) {
           return l.id === (node.getAttr("layerId") as string);
@@ -92,6 +127,37 @@ export function renderLayerTextNodes(): void {
           history.snapshot();
         }
         sidebar.render();
+      });
+      // Bake scale into the box rect during drag so glyphs don't stretch.
+      node.on("transform", function () {
+        const sx = node.scaleX();
+        const sy = node.scaleY();
+        if (Math.abs(sx - 1) < 1e-4 && Math.abs(sy - 1) < 1e-4) return;
+        const box = node.findOne<Konva.Rect>(".layer-text-box");
+        if (!box) return;
+        const newW = Math.max(4, Math.abs(box.width() * sx));
+        const newH = Math.max(4, Math.abs(box.height() * sy));
+        node.scaleX(1);
+        node.scaleY(1);
+        box.width(newW);
+        box.height(newH);
+        // Vertical = multi-column glyphs; stretching the first column to the
+        // full box warps layout. Only resize the box live — columns rebuild
+        // on transformend via render.
+        if (lay.typography.direction === "vertical") {
+          node.getChildren().forEach(function (c) {
+            const n = c.name();
+            if (n === "layer-text-glyphs" || n === "layer-text-glyphs-col") {
+              c.visible(false);
+            }
+          });
+          return;
+        }
+        const glyphs = node.findOne<Konva.Text>(".layer-text-glyphs");
+        if (glyphs) {
+          glyphs.width(newW);
+          glyphs.height(newH);
+        }
       });
       node.on("transformend", function () {
         onNodeTransformEnd(node);

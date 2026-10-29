@@ -10,13 +10,13 @@ export const DETECT_DESCS: ModelDescMap = {
 • Works reliably on clean pages as well as pages with screentones.
 • Inpainting falls back to heuristic (Otsu) masking inside each box.
 • Source: huggingface.co/ogkalu/comic-text-and-bubble-detector`,
-    id: `RT-DETR v2 r50vd yang di-fine-tune pada dataset komik (oleh ogkalu) — mendeteksi kotak teks dan gelembung ucapan pada halaman manga dengan akurasi tinggi.
+    zh: `RT-DETR v2 r50vd（ogkalu，漫画微调）— 高精度检测漫画页中的文本框与对话框。
 
-• Detektor default — berlisensi Apache-2.0, aman dipakai untuk tujuan apa pun.
-• Deteksi kotak yang cepat, tanpa output mask segmentasi.
-• Bekerja andal pada halaman bersih maupun halaman berscreentone.
-• Inpainting memakai masking heuristik (Otsu) di dalam setiap kotak.
-• Sumber: huggingface.co/ogkalu/comic-text-and-bubble-detector`,
+• 默认检测器 — Apache-2.0 许可，可用于任意用途。
+• 仅输出检测框，无分割蒙版。
+• 在干净页面与网点纸页面上均较稳定。
+• 修复阶段在框内回退到启发式（Otsu）蒙版。
+• 来源：huggingface.co/ogkalu/comic-text-and-bubble-detector`,
   },
   rfdetr_seg: {
     en: `Koharu Layout RF-DETR Seg 2XL (1152px, by ShiniShiho) — segmentation model that outputs precise per-text instance masks.
@@ -26,12 +26,12 @@ export const DETECT_DESCS: ModelDescMap = {
 • Onomatopoeia/SFX are deliberately kept as artwork, only text is erased.
 • Slower on CPU (~10-30s/page).
 • Source: huggingface.co/ShiniShiho/koharu-layout-rfdetr-seg-2xl-1152-onnx`,
-    id: `Koharu Layout RF-DETR Seg 2XL (1152px, oleh ShiniShiho) — model segmentasi yang menghasilkan mask per-teks yang presisi.
+    zh: `Koharu Layout RF-DETR Seg 2XL（1152px，ShiniShiho）— 输出精确的逐文本实例分割蒙版。
 
-• Segmentasi kualitas terbaik, tetapi dilatih pada dataset Manga109 — khusus penggunaan akademik/riset (lihat License).
-• Menghasilkan mask teks biner satu halaman penuh, sehingga inpainting menghapus tepat piksel huruf, bukan kotak kasar — jauh lebih baik pada halaman berwarna dan detail.
-• Onomatope/SFX sengaja dipertahankan sebagai artwork, hanya teks yang dihapus.
-• Lebih lambat di CPU (~10-30 detik/halaman).
-• Sumber: huggingface.co/ShiniShiho/koharu-layout-rfdetr-seg-2xl-1152-onnx`,
+• 分割质量最佳，但基于 Manga109 训练 — 仅限学术/研究用途（见 License）。
+• 生成整页二值文本蒙版，修复时精确擦除字形像素而非粗框 — 彩色与细节页效果更好。
+• 拟声词/SFX 作为画面保留，只擦除文字。
+• CPU 较慢（约 10–30 秒/页）。
+• 来源：huggingface.co/ShiniShiho/koharu-layout-rfdetr-seg-2xl-1152-onnx`,
   },
 };

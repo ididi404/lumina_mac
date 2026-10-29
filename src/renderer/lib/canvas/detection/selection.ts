@@ -6,7 +6,11 @@ import { canvas } from "../index";
 import { TEXT_COLOR } from "../render";
 import { sidebar } from "../../sidebar";
 import { groupRegistry } from "./group-registry";
-import { syncTransformerSelection } from "../tools/text/transformer";
+import { detBoxRect, layoutDetGroup } from "./groups";
+import {
+  syncTransformerSelection,
+  getTransformer,
+} from "../tools/text/transformer";
 import type { Page } from "../../../types";
 
 // ── Clear groups (called before re-render) ──
@@ -49,6 +53,36 @@ export function textIdxForLayerId(
   return null;
 }
 
+/** Dialogue layer for textDetections[idx], or null. */
+export function dialogueLayerForTextIdx(
+  page: Page | null,
+  idx: number | null,
+): import("../../../types").PageLayer | null {
+  if (!page || idx === null) return null;
+  let n = 0;
+  for (const l of page.layers) {
+    if (l.type !== "text-dialogue") continue;
+    if (n === idx) return l;
+    n++;
+  }
+  return null;
+}
+
+/**
+ * After OCR (or re-OCR): park the typeset layer on the detection box that
+ * was just cropped. Live det drags must NOT do this — only the OCR write
+ * path, so manual text-box edits stay until the next recognition.
+ */
+export function alignDialogueLayerToDet(page: Page, idx: number): void {
+  const det = page.textDetections[idx];
+  const layer = dialogueLayerForTextIdx(page, idx);
+  if (!det || !layer) return;
+  layer.bbox.x = det.bbox.x;
+  layer.bbox.y = det.bbox.y;
+  layer.bbox.w = det.bbox.w;
+  layer.bbox.h = det.bbox.h;
+}
+
 /** Re-apply the text-box highlight + transformer + status bar. */
 export function applyTextSelection(idx: number | null): void {
   const page = state.getActivePage();
@@ -56,17 +90,25 @@ export function applyTextSelection(idx: number | null): void {
 
   const textGroups = groupRegistry.textGroups();
   textGroups.forEach(function (g, i) {
-    const rect = g.findOne<Konva.Rect>("rect");
+    const rect = detBoxRect(g);
     if (!rect) return;
-    rect.stroke(i === idx ? "#00ff88" : canvas.TEXT_COLOR);
-    rect.strokeWidth(i === idx ? 3 : 2);
+    // Unselected 1px · selected 2px (handles come from the transformer).
+    const selected = idx !== null && i === idx;
+    rect.stroke(canvas.TEXT_COLOR);
+    rect.strokeWidth(selected ? 2 : 1);
+    // Selected box must stay draggable even if create-time tool flags lagged.
+    g.draggable(selected || g.draggable());
   });
 
   const tTransformer = groupRegistry.textTransformer();
   if (tTransformer) {
     if (idx !== null && textGroups[idx]) {
+      // Attach to the GROUP (badge is a layer sibling — same as text boxes).
       tTransformer.nodes([textGroups[idx]]);
+      tTransformer.moveToTop();
+      tTransformer.forceUpdate();
       textGroups[idx].draggable(true);
+      textGroups[idx].listening(true);
     } else {
       tTransformer.nodes([]);
     }
@@ -86,15 +128,19 @@ canvas.selectTextDetection = function (idx: number | null): void {
   const page = state.getActivePage();
   if (!page) return;
 
+  const prevIdx = page._selectedTextIdx ?? null;
   page._selectedTextIdx = idx;
-  // Mirror to the koharu panel selection — clicking a text box on the
-  // canvas selects its dialogue layer (highlight + TypeSection target).
+  // Mirror dialogue layer ↔ detection. Free-text selection must survive
+  // tool changes that only clear the green detection chrome.
   if (idx !== null) {
     const lid = layerIdForTextIdx(page, idx);
     if (lid) page._selectedLayerId = lid;
-  } else {
-    page._selectedLayerId = null;
-    page._expandedLayerId = null;
+  } else if (prevIdx !== null) {
+    const lid = layerIdForTextIdx(page, prevIdx);
+    if (lid && page._selectedLayerId === lid) {
+      page._selectedLayerId = null;
+      page._expandedLayerId = null;
+    }
   }
 
   applyTextSelection(idx);
@@ -109,19 +155,6 @@ const STATUS_COLORS_TEXT: Record<string, string> = {
   rejected: "#ff4444",
 };
 
-/** Apply bbox dims to a group's visuals: group size, rect, badge position */
-function _applySizeToGroup(group: Konva.Group, w: number, h: number): void {
-  group.width(Math.max(1, w));
-  group.height(Math.max(1, h));
-  const rect = group.findOne<Konva.Rect>("rect");
-  if (rect) {
-    rect.width(Math.max(1, w));
-    rect.height(Math.max(1, h));
-  }
-  const badge = group.findOne<Konva.Group>("badge-right");
-  if (badge) badge.x(Math.max(1, w) - 30);
-}
-
 canvas._refreshTextGroup = function (idx: number): void {
   const page = state.getActivePage();
   if (!page) return;
@@ -131,16 +164,12 @@ canvas._refreshTextGroup = function (idx: number): void {
   const sr = canvas.getScaleRatio();
   const off = canvas.getOffset();
   group.position({ x: off.x + det.bbox.x * sr, y: off.y + det.bbox.y * sr });
-  _applySizeToGroup(group, det.bbox.w * sr, det.bbox.h * sr);
-  const rect = group.findOne<Konva.Rect>("rect");
+  layoutDetGroup(group, det.bbox.w * sr, det.bbox.h * sr);
+  const rect = detBoxRect(group);
+  const isSelected = idx === (page._selectedTextIdx ?? null);
   if (rect) {
-    const isSelected = idx === (page._selectedTextIdx || null);
-    rect.stroke(
-      isSelected
-        ? "#00ff88"
-        : STATUS_COLORS_TEXT[det.status] || canvas.TEXT_COLOR,
-    );
-    rect.strokeWidth(isSelected ? 3 : 2);
+    rect.stroke(STATUS_COLORS_TEXT[det.status] || canvas.TEXT_COLOR);
+    rect.strokeWidth(isSelected ? 2 : 1);
   }
   const layer = canvas.getLayer();
   if (layer) layer.draw();
@@ -161,7 +190,7 @@ canvas._updateStatus = function (): void {
   ) {
     parts.push(
       i18n.t("status.selected", {
-        type: "T",
+        type: i18n.t("status.typeText"),
         index: (page._selectedTextIdx as number) + 1,
       }),
     );
@@ -172,17 +201,48 @@ canvas._updateStatus = function (): void {
 
 // ── Tool change ──
 
+/** Non-paint tools can select / drag canvas objects. */
+function _canSelectObjects(tool: string): boolean {
+  return (
+    tool === "select" ||
+    tool === "text" ||
+    tool === "lasso" ||
+    tool === "rect"
+  );
+}
+
 canvas.onToolChange = function (tool: string): void {
-  if (tool !== "select") {
+  const canSelect = _canSelectObjects(tool);
+  // Only paint tools drop object selection (they own the pointer).
+  if (!canSelect) {
     canvas.selectTextDetection(null);
+    const page = state.getActivePage();
+    if (page) {
+      page._selectedLayerId = null;
+      page._expandedLayerId = null;
+    }
   }
   groupRegistry.textGroups().forEach(function (g) {
-    g.draggable(tool === "select");
+    g.listening(canSelect && state.showDetBoxes);
+    g.draggable(canSelect && state.showDetBoxes);
   });
   const tTransformer = groupRegistry.textTransformer();
-  if (tTransformer && tool !== "select") tTransformer.nodes([]);
+  if (tTransformer && !canSelect) tTransformer.nodes([]);
   // Re-render so layer text nodes pick up the right interactivity mode
   canvas.render();
+  // Re-attach handles for whatever is still selected.
+  if (canSelect) {
+    syncTransformerSelection();
+    const page = state.getActivePage();
+    if (page && page._selectedTextIdx != null) {
+      applyTextSelection(page._selectedTextIdx);
+    }
+    const tr = getTransformer();
+    if (tr) {
+      tr.moveToTop();
+      tr.forceUpdate();
+    }
+  }
   // Konva may have left a stale inline resize cursor on stage.content from a
   // previous transformer drag — clear it so the new tool's cursor applies.
   const stage = canvas.getStage();

@@ -122,7 +122,7 @@ export function buildModal(): void {
           </button>
         </div>
       </div>
-      <div class="settings-resize-grip" id="export-resize-grip" title="Resize">
+      <div class="settings-resize-grip" id="export-resize-grip" data-i18n-title="common.resize" title="Resize">
         <i data-lucide="grip" class="w-3 h-3"></i>
       </div>
     </div>

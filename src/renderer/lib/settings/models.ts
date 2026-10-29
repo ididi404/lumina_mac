@@ -298,7 +298,12 @@ export const modelsTab = {
     const name = card.querySelector<HTMLElement>(".model-gpu-name")!;
     const ep = card.querySelector<HTMLElement>(".model-gpu-ep")!;
     const input = card.querySelector<HTMLInputElement>("input[type=checkbox]")!;
-    const accel = !!dev?.accelerated;
+    const provider = (dev?.provider || "").toLowerCase();
+    const accel =
+      !!dev?.accelerated ||
+      provider === "cuda" ||
+      provider === "dml" ||
+      provider === "coreml";
     const useGpu = models.useGpu();
 
     // When the toggle is off the backend skips GPU enumeration entirely
@@ -307,8 +312,18 @@ export const modelsTab = {
     name.textContent = useGpu
       ? dev?.gpuName || i18n.t(dev ? "settings.gpuNone" : "settings.gpuUnknown")
       : i18n.t("settings.gpuDisabled");
+    const epLabel =
+      provider === "coreml"
+        ? "Metal / CoreML"
+        : provider === "cuda"
+          ? "CUDA"
+          : provider === "dml"
+            ? "DirectML"
+            : provider === "cpu"
+              ? "CPU"
+              : dev?.ep || "";
     ep.textContent = dev
-      ? `${dev.ep} · onnxruntime ${dev.onnxRuntime ?? "?"}`
+      ? `${epLabel} · onnxruntime ${dev.onnxRuntime ?? "?"}`
       : "";
 
     let badge = card.querySelector<HTMLElement>(".model-gpu-badge");

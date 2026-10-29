@@ -86,10 +86,10 @@ app.whenReady().then(async () => {
 });
 
 app.on("window-all-closed", () => {
+  // Quit on every platform — closing the window should exit, not leave a
+  // Dock/taskbar ghost that needs a second Quit.
   stopBackend();
-  if (process.platform !== "darwin") {
-    app.quit();
-  }
+  app.quit();
 });
 
 app.on("before-quit", () => {

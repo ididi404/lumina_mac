@@ -60,10 +60,32 @@ export function initPaintOptions(): void {
   if (!el) return;
 
   const color = el.querySelector<HTMLInputElement>("#paint-color");
+  const colorHex = el.querySelector<HTMLInputElement>("#paint-color-hex");
+  const applyColor = function (raw: string): void {
+    let hex = raw.trim();
+    if (!hex.startsWith("#")) hex = "#" + hex;
+    if (!/^#[0-9a-fA-F]{6}$/.test(hex)) return;
+    hex = hex.toLowerCase();
+    setPaintColor(hex);
+    if (color) color.value = hex;
+    if (colorHex) colorHex.value = hex.toUpperCase();
+    clearSprite();
+  };
   if (color) {
     color.addEventListener("input", function () {
-      setPaintColor(color.value);
-      clearSprite();
+      applyColor(color.value);
+    });
+  }
+  if (colorHex) {
+    colorHex.addEventListener("change", function () {
+      applyColor(colorHex.value);
+      colorHex.value = paintSettings().color.toUpperCase();
+    });
+    colorHex.addEventListener("keydown", function (e) {
+      if (e.key === "Enter") {
+        applyColor(colorHex.value);
+        colorHex.blur();
+      }
     });
   }
 
@@ -157,4 +179,7 @@ export function initPaintOptions(): void {
       syncOptionsBar(state.activeTool);
     });
   }
+
+  // Sync visibility for whatever tool is already active at boot.
+  syncOptionsBar(state.activeTool);
 }

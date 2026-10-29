@@ -17,6 +17,7 @@ import {
 import { CACHE_DIR } from "../backend/cache";
 import { handle, windowFromEvent } from "../core/ipc";
 import { log } from "../core/logger";
+import { t } from "../system/i18n";
 import { recordRecent } from "./recents";
 import { zipRead, zipWrite } from "./zip";
 
@@ -32,9 +33,9 @@ async function handleSave(
   let savePath = payload.savePath;
   if (!savePath) {
     const res = await dialog.showSaveDialog(windowFromEvent(event)!, {
-      title: "Save Project",
+      title: t("dialog.saveProject"),
       defaultPath: "project.lmi",
-      filters: [{ name: "Lumina Project", extensions: ["lmi"] }],
+      filters: [{ name: t("dialog.filterLmi"), extensions: ["lmi"] }],
     });
     if (res.canceled || !res.filePath) return { path: null, canceled: true };
     savePath = res.filePath;
@@ -139,9 +140,9 @@ async function handleOpen(
   let zipPath = explicitPath;
   if (!zipPath) {
     const res = await dialog.showOpenDialog(windowFromEvent(event)!, {
-      title: "Open Project",
+      title: t("dialog.openProject"),
       properties: ["openFile"],
-      filters: [{ name: "Lumina Project", extensions: ["lmi"] }],
+      filters: [{ name: t("dialog.filterLmi"), extensions: ["lmi"] }],
     });
     if (res.canceled || !res.filePaths[0]) return null;
     zipPath = res.filePaths[0];
@@ -209,11 +210,11 @@ async function handleConfirmDiscard(
 ): Promise<DiscardChoice> {
   const res = await dialog.showMessageBox(windowFromEvent(event)!, {
     type: "warning",
-    buttons: ["Save", "Don't Save", "Cancel"],
+    buttons: [t("common.save"), t("common.discard"), t("common.cancel")],
     defaultId: 0,
     cancelId: 2,
     noLink: true,
-    message: "Unsaved changes",
+    message: t("dialog.unsavedTitle"),
     detail: message,
   });
   return res.response === 0
@@ -228,11 +229,11 @@ async function handleShowSaveDialog(
   opts?: ShowSaveDialogOptions,
 ): Promise<ShowSaveDialogResult> {
   const res = await dialog.showSaveDialog(windowFromEvent(event)!, {
-    title: "Save As",
+    title: t("dialog.saveAs"),
     defaultPath: opts?.defaultPath || "project.lmi",
     filters: [
-      { name: "Lumina Project", extensions: ["lmi"] },
-      { name: "Photoshop Document", extensions: ["psd"] },
+      { name: t("dialog.filterLmi"), extensions: ["lmi"] },
+      { name: t("dialog.filterPsd"), extensions: ["psd"] },
     ],
   });
   if (res.canceled || !res.filePath) return { canceled: true };

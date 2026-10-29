@@ -1,7 +1,7 @@
 """Shared Pydantic schemas for request/response models."""
 from __future__ import annotations
 
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 
 
 class Bbox(BaseModel):
@@ -59,7 +59,13 @@ class OcrResponse(BaseModel):
 
 
 class TranslateConfig(BaseModel):
-    provider: str  # "custom" | "openrouter" | "grok" | "gemini"
+    """Provider config from the renderer. Extra fields are allowed so new
+    OpenAI-compatible presets (siliconflowApiKey, zhipuModel, …) are not
+    stripped before the Python provider catalog reads them."""
+
+    model_config = ConfigDict(extra="allow")
+
+    provider: str  # "custom" | "openrouter" | "siliconflow" | "gemini" | …
     targetLang: str = "en"
     apiKey: str | None = None
     llmBaseUrl: str | None = None
@@ -67,8 +73,15 @@ class TranslateConfig(BaseModel):
     llmModel: str | None = None
     llmStyle: str | None = None  # "openai" | "anthropic" (custom provider only)
     llmInstruction: str | None = None
+    # Known preset fields (also accepted via extra="allow" if catalog grows)
     openrouterApiKey: str | None = None
     openrouterModel: str | None = None
+    siliconflowApiKey: str | None = None
+    siliconflowModel: str | None = None
+    zhipuApiKey: str | None = None
+    zhipuModel: str | None = None
+    hunyuanApiKey: str | None = None
+    hunyuanModel: str | None = None
     grokApiKey: str | None = None
     grokModel: str | None = None
     geminiApiKey: str | None = None

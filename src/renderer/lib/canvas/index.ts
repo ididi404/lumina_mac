@@ -183,6 +183,33 @@ let _deselectBound = false;
 export function resetDeselectBinding(): void {
   _deselectBound = false;
 }
+/** True when the click landed on empty page chrome (stage / bg), not a box. */
+function _isEmptyCanvasTarget(target: {
+  name?: () => string;
+  getParent?: () => unknown;
+}): boolean {
+  const stage = canvas.getStage();
+  const layer = canvas.getLayer();
+  if (!stage || !layer) return false;
+  if (target === stage) return true;
+  const name = target.name ? target.name() : "";
+  if (name === "bg" || name === "") {
+    return target.getParent?.() === layer || target.getParent?.() === stage;
+  }
+  return false;
+}
+
+function _clearCanvasSelection(): void {
+  // Clear BOTH green detection chrome and red text-layer selection.
+  // selectTextDetection(null) alone keeps free-text _selectedLayerId.
+  const page = state.getActivePage();
+  if (!page) return;
+  page._selectedTextIdx = null;
+  page._selectedLayerId = null;
+  page._expandedLayerId = null;
+  canvas.selectLayer(null);
+}
+
 canvas._initDeselectClick = function (): void {
   if (_deselectBound) return;
   const stage = canvas.getStage();
@@ -192,19 +219,21 @@ canvas._initDeselectClick = function (): void {
     const t = state.activeTool;
     if (t === "brush" || t === "eraser" || t === "bucket" || t === "eyedropper")
       return;
-    if (e.target === stage || e.target.getParent() === canvas.getLayer()) {
-      canvas.selectTextDetection(null);
-    }
+    // Create finishes on mouseup then opens the editor; the same gesture's
+    // trailing click would otherwise clear _selectedLayerId and disable
+    // type controls (auto-fit). Skip while the in-place editor is open.
+    if (document.getElementById("text-tool-editor")) return;
+    if (!_isEmptyCanvasTarget(e.target)) return;
+    _clearCanvasSelection();
   });
   stage.on("contextmenu", function (e) {
-    if (e.target !== stage && e.target.getParent() !== canvas.getLayer())
-      return;
+    if (!_isEmptyCanvasTarget(e.target)) return;
     e.evt.preventDefault();
     contextMenu.show(e.evt.clientX, e.evt.clientY, [
       {
         labelKey: "ctx.deselect",
         action: function () {
-          canvas.selectTextDetection(null);
+          _clearCanvasSelection();
         },
       },
     ]);
@@ -220,9 +249,14 @@ canvas.updateBoxToggle = function (): void {
   const page = state.getActivePage();
   const hasDet =
     !!page && !!page.textDetections && page.textDetections.length > 0;
-  const hasMask = !!page && !!page.inpaintMasks && page.inpaintMasks.length > 0;
-  btn.disabled = !hasDet || hasMask;
-  btn.classList.toggle("active", !!state.showDetBoxes);
+  // No boxes on this page → force the overlay OFF. Leaving it on with an
+  // empty list disables text-layer hit-testing (layerTextListening) while
+  // the button is disabled, so the user can never select anything.
+  if (!hasDet && state.showDetBoxes) {
+    state.showDetBoxes = false;
+  }
+  btn.disabled = !hasDet;
+  btn.classList.toggle("active", !!state.showDetBoxes && hasDet);
 };
 
 /** Init all canvas-related keyboard/UI bindings */

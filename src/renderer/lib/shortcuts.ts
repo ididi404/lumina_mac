@@ -12,6 +12,7 @@ export type ActionId =
   | "openProject"
   | "save"
   | "saveAs"
+  | "closeProject"
   | "export"
   | "exportAll"
   | "toolSelect"
@@ -35,6 +36,7 @@ export const shortcuts = {
     openProject: "Ctrl+O",
     save: "Ctrl+S",
     saveAs: "Ctrl+Shift+S",
+    closeProject: "Ctrl+W",
     export: "Ctrl+E",
     exportAll: "Ctrl+Shift+E",
     toolSelect: "V",
@@ -138,6 +140,9 @@ export const shortcuts = {
         },
         saveAs: function () {
           project.saveAs();
+        },
+        closeProject: function () {
+          void project.close();
         },
         export: function () {
           exportModule.open();

@@ -26,6 +26,8 @@ import type { RuntimeInfo, RuntimeProgress } from "./runtime";
 import type { LogLevel } from "../logger";
 
 export interface LuminaAPI {
+  /** Node process.platform — "darwin" | "win32" | … */
+  platform: string;
   importImage(): Promise<string | null>;
   importImages(): Promise<string[] | null>;
   apiPost<T = unknown>(endpoint: string, body: unknown): Promise<T>;
@@ -38,6 +40,8 @@ export interface LuminaAPI {
   getFonts(): Promise<FontInfo[]>;
   loadTranslations(): Promise<Record<string, Record<string, string>>>;
   loadDefaultInstruction(): Promise<string>;
+  /** Persist UI language so native dialogs match the renderer. */
+  setUiLang(code: string): Promise<void>;
   setSecret(key: string, value: string): Promise<void>;
   getSecret(key: string): Promise<string | null>;
   getSecrets(keys: string[]): Promise<Record<string, string | null>>;

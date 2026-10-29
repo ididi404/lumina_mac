@@ -3,14 +3,13 @@ import { state } from "../state";
 import * as i18n from "../i18n";
 import { ui } from "../ui";
 import { canvas } from "./index";
-import { invalidateComposite, destroyStage } from "./render";
+import { invalidateComposite } from "./render";
 import * as pageImages from "../project/page-images";
 import { hydrateCleanupCanvas } from "./tools/paint/shared";
 import { hydrateMaskImages } from "../history";
 import { sidebar } from "../sidebar";
 import { history } from "../history";
 import { createIcons } from "../ui/icons";
-import * as landing from "../ui/landing";
 import { isDirty, markDirty } from "../project/dirty";
 import type { Page } from "../../types";
 
@@ -60,7 +59,9 @@ canvas.renderPageStrip = function (): void {
       const badge = document.createElement("div");
       badge.className = "page-badge";
       badge.textContent = String(page.layers.length);
-      badge.title = `${page.layers.length} layer(s)`;
+      badge.title = i18n.t("pages.layerCount", {
+        count: page.layers.length,
+      });
       thumb.appendChild(badge);
     }
 
@@ -241,9 +242,8 @@ canvas.removePage = async function (idx: number): Promise<void> {
     state.activePageIdx = Math.min(idx, state.pages.length - 1);
     canvas.render();
   } else {
-    // No pages left — show landing
-    landing.show();
-    destroyStage();
+    const { resetToLanding } = await import("../project");
+    resetToLanding();
   }
   canvas.renderPageStrip();
   ui.updatePageIndicator();

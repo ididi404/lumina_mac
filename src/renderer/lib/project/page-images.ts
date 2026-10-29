@@ -92,6 +92,11 @@ export async function ensurePageImage(page: Page): Promise<boolean> {
   return true;
 }
 
+/** Drop every cached decoded page bitmap (e.g. when closing the project). */
+export function flushDecoded(): void {
+  _decoded.clear();
+}
+
 /** Drop the decoded bitmap + full-page cleanup canvas + mask patch bitmaps of
  *  a page (keep its thumbnail). No-op while the bitmap is still in the LRU. */
 export function releasePageImage(page: Page): void {

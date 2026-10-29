@@ -1,4 +1,4 @@
-"""Grok (Groq) — OpenAI-compatible chat."""
+"""Generic OpenAI-compatible preset providers (OpenRouter, SiliconFlow, …)."""
 from __future__ import annotations
 
 from .._base import (
@@ -9,31 +9,37 @@ from .._base import (
     parse_batch_response,
 )
 from ..protocol.openai import chat
+from .catalog import OPENAI_PRESETS
 from utils.logger import log
 
-_BASE_URL = "https://api.groq.com/openai/v1"
 
-
-def _resolve(config: dict) -> tuple[str, str, str]:
-    """(base_url, api_key, model) — own key/model fields only."""
-    return (
-        _BASE_URL,
-        config.get("grokApiKey") or "",
-        config.get("grokModel") or "",
-    )
+def _resolve(config: dict) -> tuple[str, str, str, str]:
+    """(provider_id, base_url, api_key, model)."""
+    name = (config.get("provider") or "").lower()
+    preset = OPENAI_PRESETS.get(name)
+    if not preset:
+        raise TranslateError(f"Unknown OpenAI preset provider: {name!r}")
+    model = (config.get(preset["model_field"]) or preset["default_model"] or "").strip()
+    api_key = (config.get(preset["key_field"]) or "").strip()
+    return name, preset["base_url"], api_key, model
 
 
 def translate(text: str, target: str, config: dict) -> str:
-    base_url, api_key, model = _resolve(config)
+    name, base_url, api_key, model = _resolve(config)
+    if not api_key:
+        raise TranslateError(f"{name} API key not configured")
     if not model:
         raise TranslateError("LLM model not configured")
-    log.debug(f"Grok translate: model={model}")
+    log.debug(f"{name} translate: model={model}")
     system = build_system_instruction(config, target)
     prev = config.get("previousLines") or ""
     if isinstance(prev, list):
         prev = " / ".join(str(p) for p in prev if p)
     return chat(
-        base_url, api_key, model, system,
+        base_url,
+        api_key,
+        model,
+        system,
         build_single_prompt(text, target, previous_line=prev),
     )
 
@@ -41,9 +47,12 @@ def translate(text: str, target: str, config: dict) -> str:
 def translate_batch(
     texts: list[str], target: str, config: dict
 ) -> list[str]:
-    base_url, api_key, model = _resolve(config)
+    name, base_url, api_key, model = _resolve(config)
+    if not api_key:
+        raise TranslateError(f"{name} API key not configured")
     if not model:
         raise TranslateError("LLM model not configured")
+    log.debug(f"{name} translate_batch: model={model} count={len(texts)}")
     system = build_system_instruction(config, target, previous_line="")
     raw = chat(
         base_url,

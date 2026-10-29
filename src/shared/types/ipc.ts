@@ -21,6 +21,7 @@ export const IPC = {
   getFonts: "get-fonts",
   loadTranslations: "load-translations",
   loadDefaultInstruction: "load-default-instruction",
+  setUiLang: "set-ui-lang",
 
   // Secrets
   secretsSet: "secrets-set",

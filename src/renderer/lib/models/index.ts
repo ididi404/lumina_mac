@@ -35,13 +35,15 @@ export const models = {
     return s.models;
   },
 
-  /** Fetch device/GPU info once and notify subscribers. */
+  /** Fetch device/GPU info once and notify subscribers.
+   *  Always go through configure so LUMINA_EP matches the toggle
+   *  (getDevice alone would not clear a stale LUMINA_EP=cpu). */
   async refreshDevice(): Promise<DeviceInfo | null> {
     try {
-      if (!useGpuSetting()) {
-        s.device = await window.lumina.setUseGpu(false);
-      } else {
-        s.device = await window.lumina.getDevice();
+      s.device = await window.lumina.setUseGpu(useGpuSetting());
+      // Reject non-device payloads (e.g. legacy {error} shapes).
+      if (!s.device || typeof s.device.provider !== "string") {
+        s.device = null;
       }
       for (const cb of s.deviceCbs) cb(s.device);
     } catch {
@@ -64,7 +66,11 @@ export const models = {
   async setUseGpu(v: boolean): Promise<DeviceInfo | null> {
     localStorage.setItem(USE_GPU_KEY, v ? "1" : "0");
     try {
-      s.device = await window.lumina.setUseGpu(v);
+      const raw = await window.lumina.setUseGpu(v);
+      s.device =
+        raw && typeof (raw as DeviceInfo).provider === "string"
+          ? (raw as DeviceInfo)
+          : null;
     } catch {
       s.device = null;
     }
@@ -81,7 +87,7 @@ export const models = {
     };
   },
 
-  /** True when every registered model is installed. */
+  /** True when each selected pipeline model (detect/ocr/inpaint) is installed. */
   allReady(): boolean {
     return allReady();
   },

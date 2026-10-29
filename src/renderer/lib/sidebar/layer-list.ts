@@ -31,7 +31,6 @@ function editorTabFor(layer: PageLayer): "source" | "translation" {
 function editorTabButton(
   which: "source" | "translation",
   active: "source" | "translation",
-  hasContent: boolean,
 ): string {
   return (
     '<button type="button" class="layer-editor-tab' +
@@ -42,36 +41,19 @@ function editorTabButton(
     "<span>" +
     esc(i18n.t(which === "source" ? "layers.source" : "layers.translation")) +
     "</span>" +
-    (hasContent ? '<span class="le-tab-dot"></span>' : "") +
     "</button>"
   );
 }
 
-// Content dots sit on INACTIVE tabs that hold text — a silent cue that the
-// hidden field is filled (the active tab's content is already visible).
 function syncEditorTabs(
   row: HTMLElement,
   active: "source" | "translation",
-  layer: PageLayer,
 ): void {
   row
     .querySelectorAll<HTMLButtonElement>(".layer-editor-tab")
     .forEach(function (b) {
       const which = b.getAttribute("data-tab") as "source" | "translation";
       b.classList.toggle("active", which === active);
-      const filled =
-        which === "source"
-          ? !!(layer.source || "").trim()
-          : !!(layer.translation || "").trim();
-      const show = filled && which !== active;
-      const dot = b.querySelector(".le-tab-dot");
-      if (show && !dot) {
-        const d = document.createElement("span");
-        d.className = "le-tab-dot";
-        b.appendChild(d);
-      } else if (!show && dot) {
-        dot.remove();
-      }
     });
 }
 
@@ -195,18 +177,15 @@ function layerRowHTML(page: Page, layer: PageLayer, idx: number): string {
     "</div>";
 
   // Expanded editor for the selected text layer — one textarea at a time,
-  // switched through the Original | Translation tabs (the other field keeps
-  // its content; a dot on the inactive tab shows it's filled).
+  // switched through the Original | Translation tabs.
   // Only shown after double-click (expanded) to avoid accidental editor pop-ups.
   if (selected && expanded && isText) {
     const tab = editorTabFor(layer);
-    const hasSrc = (layer.source || "").trim().length > 0;
-    const hasTr = (layer.translation || "").trim().length > 0;
     html +=
       '<div class="layer-editor">' +
       '<div class="layer-editor-tabs">' +
-      editorTabButton("source", tab, hasSrc && tab !== "source") +
-      editorTabButton("translation", tab, hasTr && tab !== "translation") +
+      editorTabButton("source", tab) +
+      editorTabButton("translation", tab) +
       "</div>" +
       '<textarea class="layer-editor-textarea' +
       (tab === "translation" ? " layer-editor-translation" : "") +
@@ -318,7 +297,7 @@ export function wireEvents(): void {
         });
         if (!layer) return;
         _editorTabs[id] = tab;
-        syncEditorTabs(row, tab, layer);
+        syncEditorTabs(row, tab);
         const ta = row.querySelector<HTMLTextAreaElement>(
           ".layer-editor-textarea",
         );

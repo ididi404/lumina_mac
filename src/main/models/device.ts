@@ -2,8 +2,9 @@
 import { IPC } from "../../shared/bridge";
 import { apiGet, apiPost } from "../backend/client";
 import { handle } from "../core/ipc";
+import type { DeviceInfo } from "../../shared/types/device";
 
-function fallbackDevice() {
+function fallbackDevice(): DeviceInfo {
   return {
     provider: "cpu",
     ep: "CPUExecutionProvider",
@@ -15,19 +16,40 @@ function fallbackDevice() {
   };
 }
 
+function isDeviceInfo(v: unknown): v is DeviceInfo {
+  return (
+    !!v &&
+    typeof v === "object" &&
+    typeof (v as DeviceInfo).provider === "string" &&
+    typeof (v as DeviceInfo).ep === "string"
+  );
+}
+
+/** Normalize backend payload — treat any non-CPU EP as accelerated. */
+function normalizeDevice(raw: DeviceInfo): DeviceInfo {
+  const provider = (raw.provider || "cpu").toLowerCase();
+  const gpuProviders = new Set(["cuda", "dml", "coreml"]);
+  const accelerated =
+    !!raw.accelerated || gpuProviders.has(provider);
+  return { ...raw, provider, accelerated };
+}
+
 export function registerDeviceHandlers(): void {
   handle(IPC.device, async () => {
     try {
-      return await apiGet("/device");
+      const raw = await apiGet("/device");
+      return isDeviceInfo(raw) ? normalizeDevice(raw) : fallbackDevice();
     } catch {
       return fallbackDevice();
     }
   });
   handle(IPC.deviceConfigure, async (_e, useGpu: boolean) => {
     try {
-      return await apiPost("/device/configure", { useGpu: !!useGpu });
-    } catch (err) {
-      return { error: String(err) };
+      const raw = await apiPost("/device/configure", { useGpu: !!useGpu });
+      if (!isDeviceInfo(raw)) return fallbackDevice();
+      return normalizeDevice(raw);
+    } catch {
+      return fallbackDevice();
     }
   });
   handle(IPC.checkModel, async () => {

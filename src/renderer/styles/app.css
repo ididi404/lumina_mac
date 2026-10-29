@@ -706,6 +706,11 @@ body.resizing-settings * {
 .type-section .field-select {
   width: 100%;
   min-width: 0;
+  height: 26px;
+  box-sizing: border-box;
+  padding-top: 0;
+  padding-bottom: 0;
+  line-height: 24px;
 }
 
 /* ── Shortcut settings ── */
@@ -921,16 +926,19 @@ body.resizing-settings * {
   opacity: 1;
 }
 .det-btn {
-  width: 18px;
-  height: 18px;
+  width: 22px;
+  height: 22px;
   display: flex;
   align-items: center;
   justify-content: center;
-  border-radius: 3px;
+  border-radius: 4px;
   font-size: 10px;
   line-height: 1;
   color: #969696;
   background: transparent;
+  padding: 0;
+  flex-shrink: 0;
+  aspect-ratio: 1;
 }
 .det-btn:hover:not(:disabled) {
   background: #3a3a3a;
@@ -1233,6 +1241,7 @@ body.resizing-row {
   appearance: none;
   width: 100%;
   height: 26px;
+  box-sizing: border-box;
   padding: 2px;
   background: rgba(0, 0, 0, 0.4);
   border: 1px solid rgba(255, 255, 255, 0.1);
@@ -1258,8 +1267,9 @@ body.resizing-row {
 }
 .type-size-btn,
 .type-step-btn {
-  width: 22px;
+  width: 26px;
   height: 26px;
+  box-sizing: border-box;
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -1270,7 +1280,14 @@ body.resizing-row {
   font-size: 11px;
   flex-shrink: 0;
   cursor: pointer;
+  padding: 0;
   transition: all 0.15s ease;
+}
+.type-size-btn svg,
+.type-step-btn svg {
+  width: 14px;
+  height: 14px;
+  pointer-events: none;
 }
 .type-size-btn:hover,
 .type-step-btn:hover {
@@ -1310,6 +1327,10 @@ body.resizing-row {
     background 0.12s ease,
     color 0.12s ease;
 }
+.type-size-item.active {
+  color: #ff7b92;
+  background: rgba(233, 69, 96, 0.15);
+}
 .type-size-item:hover {
   background: rgba(255, 255, 255, 0.08);
   color: #ffffff;
@@ -1317,17 +1338,30 @@ body.resizing-row {
 .type-align-seg {
   display: grid;
   grid-template-columns: repeat(3, 1fr);
+  box-sizing: border-box;
+  height: 26px;
   background: rgba(0, 0, 0, 0.35);
   border: 1px solid rgba(255, 255, 255, 0.08);
   border-radius: 6px;
-  padding: 2px;
-  gap: 2px;
-  height: 26px;
+  padding: 1px;
+  gap: 1px;
+}
+.type-align-seg-2 {
+  grid-template-columns: repeat(2, 1fr);
 }
 .type-align-btn {
   display: flex;
   align-items: center;
   justify-content: center;
+  width: 100%;
+  height: 100%;
+  min-width: 0;
+  min-height: 0;
+  padding: 0 2px;
+  font-size: 0.68rem;
+  font-weight: 600;
+  line-height: 1;
+  white-space: nowrap;
   color: #9a9aa2;
   background: transparent;
   border: none;
@@ -1335,22 +1369,19 @@ body.resizing-row {
   cursor: pointer;
   transition: all 0.15s ease;
 }
-.type-align-btn svg {
-  width: 12px;
-  height: 12px;
-}
 .type-align-btn:hover {
   color: #ffffff;
   background: rgba(255, 255, 255, 0.06);
 }
 .type-align-btn.active {
-  background: #e94560;
-  color: #ffffff;
-  box-shadow: 0 1px 4px rgba(233, 69, 96, 0.35);
+  color: var(--color-text-primary);
+  background: var(--color-surface-3);
+  box-shadow: none;
 }
 .type-square-toggle {
   width: 26px;
   height: 26px;
+  box-sizing: border-box;
   flex-shrink: 0;
   background: rgba(0, 0, 0, 0.4);
   border: 1px solid rgba(255, 255, 255, 0.1);
@@ -1361,6 +1392,7 @@ body.resizing-row {
   display: flex;
   align-items: center;
   justify-content: center;
+  padding: 0;
 }
 .type-square-toggle svg {
   width: 12px;
@@ -1382,11 +1414,35 @@ body.resizing-row {
   flex: 1;
   min-width: 0;
   height: 26px;
+  box-sizing: border-box;
   text-align: center;
   font-variant-numeric: tabular-nums;
 }
+/* Kill native number spinners on type size / stroke width / rotation. */
+#type-size,
+#type-stroke-width,
+#type-rotation,
+.type-width-num,
+.type-rotation-num {
+  -moz-appearance: textfield;
+  appearance: textfield;
+}
+#type-size::-webkit-outer-spin-button,
+#type-size::-webkit-inner-spin-button,
+#type-stroke-width::-webkit-outer-spin-button,
+#type-stroke-width::-webkit-inner-spin-button,
+#type-rotation::-webkit-outer-spin-button,
+#type-rotation::-webkit-inner-spin-button,
+.type-width-num::-webkit-outer-spin-button,
+.type-width-num::-webkit-inner-spin-button,
+.type-rotation-num::-webkit-outer-spin-button,
+.type-rotation-num::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
 .type-stepper {
   width: 100%;
+  height: 26px;
 }
 .type-stepper .type-width-num {
   min-width: 28px;
@@ -1394,37 +1450,50 @@ body.resizing-row {
   padding-right: 2px;
   text-align: center;
 }
-.type-autofit-btn {
+.type-rotation-row {
+  width: 100%;
   height: 26px;
-  align-self: end;
-  padding: 0 10px;
-  white-space: nowrap;
-  background: rgba(255, 255, 255, 0.04);
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  border-radius: 6px;
-  font-size: 0.65rem;
-  font-weight: 500;
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-  color: #a0a0a8;
+}
+.type-rotation-slider {
+  -webkit-appearance: none;
+  appearance: none;
+  flex: 1 1 auto;
+  min-width: 0;
+  height: 4px;
+  border-radius: 2px;
+  background: #3a3a3a;
+  outline: none;
   cursor: pointer;
-  transition: all 0.15s ease;
 }
-.type-autofit-btn:hover {
-  background: rgba(255, 255, 255, 0.08);
-  color: #ffffff;
-  border-color: rgba(255, 255, 255, 0.18);
+.type-rotation-slider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: #e94560;
+  border: 2px solid #fff;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.5);
+  cursor: pointer;
 }
-.type-autofit-btn.active {
-  background: rgba(233, 69, 96, 0.2);
-  color: #ff7b92;
-  border-color: #e94560;
+.type-rotation-slider::-moz-range-thumb {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: #e94560;
+  border: 2px solid #fff;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.5);
+  cursor: pointer;
 }
-.type-autofit-btn:disabled {
-  opacity: 0.35;
-  pointer-events: none;
+/* Beat .type-section .field-select { width:100% } + .type-width-num { flex:1 }. */
+.type-section .type-rotation-num {
+  flex: 0 0 52px;
+  width: 52px;
+  min-width: 52px;
+  max-width: 52px;
+  padding-left: 4px;
+  padding-right: 4px;
 }
-
 /* ── Layer editor (Original | Translation tabs) ── */
 .layer-editor {
   padding: 2px 8px 8px 30px;
@@ -1466,17 +1535,7 @@ body.resizing-row {
 }
 .layer-editor-tab.active {
   background: #1f1f23;
-  color: #e94560;
-}
-.le-tab-dot {
-  width: 5px;
-  height: 5px;
-  border-radius: 50%;
-  background: #e94560;
-  flex-shrink: 0;
-}
-.layer-editor-tab.active .le-tab-dot {
-  background: #e94560;
+  color: #ffffff;
 }
 .layer-editor-textarea {
   width: 100%;
@@ -1573,12 +1632,20 @@ body.resizing-row {
   border: 0;
   background: transparent;
   color: #82828a;
-  font-size: 0.75rem;
-  line-height: 1;
-  padding: 4px 6px;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   border-radius: 4px;
   cursor: pointer;
+  flex-shrink: 0;
   transition: all 0.15s ease;
+}
+.font-picker-close svg {
+  width: 14px;
+  height: 14px;
 }
 .font-picker-close:hover {
   color: #ffffff;
@@ -1603,12 +1670,13 @@ body.resizing-row {
   flex: 1;
   min-height: 0;
   overflow-y: auto;
-  padding: 4px 0;
+  /* No top padding — sit flush under the search box */
+  padding: 0 0 4px;
 }
 .font-picker-head {
   position: sticky;
   top: 0;
-  padding: 6px 12px 4px;
+  padding: 4px 12px 3px;
   font-size: 0.62rem;
   font-weight: 600;
   letter-spacing: 0.05em;
@@ -1617,6 +1685,13 @@ body.resizing-row {
   background: rgba(18, 18, 22, 0.95);
   backdrop-filter: blur(8px);
   z-index: 1;
+}
+/* First row under search (category head or default item) — no extra top gap */
+.font-picker-list > .font-picker-head:first-child {
+  padding-top: 2px;
+}
+.font-picker-list > .font-picker-item:first-child {
+  margin-top: 0;
 }
 .font-picker-item {
   display: flex;
@@ -2089,14 +2164,16 @@ body.resizing-row {
   gap: 6px;
   min-width: 0;
   margin-top: 1px;
+  width: 100%;
 }
 .layer-row.selected .mask-opacity-line {
   display: flex;
 }
-.mask-opacity-label {
-  font-size: 0.6rem;
-  color: #6a6a6a;
-  flex-shrink: 0;
+.mask-opacity-line .mask-opacity,
+.mask-opacity-line .cleanup-opacity {
+  flex: 1 1 auto;
+  min-width: 0;
+  width: auto;
 }
 .mask-opacity-value {
   width: 30px;
@@ -2107,18 +2184,37 @@ body.resizing-row {
   flex-shrink: 0;
 }
 
-/* ── Paint tool options bar (header) ── */
+/* ── Paint tool options (inline in titlebar, after menus) ──
+ * Header height is fixed (h-11) — showing/hiding options must not reflow the canvas. */
 .paint-options {
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 0 6px;
-  height: 24px;
-  font-size: 0.68rem;
-  color: #b0b0b4;
+  flex-wrap: nowrap;
+  gap: 10px;
+  height: 28px;
+  /* Content-sized only — flex-grow would swallow the titlebar drag region. */
+  flex: 0 1 auto;
+  max-width: min(720px, 55vw);
+  margin-left: 8px;
+  padding: 0 8px;
+  box-sizing: border-box;
+  overflow-x: auto;
+  overflow-y: hidden;
+  font-size: 0.72rem;
+  color: #d4d4d4;
+  background: transparent;
+  border: none;
+  border-left: 1px solid #333;
+  border-radius: 0;
+  /* Container stays draggable — only inputs/labels/buttons inside are no-drag. */
+  -webkit-app-region: drag;
 }
 .paint-options.hidden {
-  display: none;
+  display: none !important;
+}
+.paint-opt-label {
+  color: #969696;
+  font-size: 0.7rem;
 }
 .paint-opt {
   display: flex;
@@ -2140,8 +2236,8 @@ body.resizing-row {
     to right,
     #e94560 0%,
     #e94560 var(--fill, 0%),
-    #3a3a3a var(--fill, 0%),
-    #3a3a3a 100%
+    #e4e4e7 var(--fill, 0%),
+    #e4e4e7 100%
   );
 }
 .paint-opt input[type="range"]::-webkit-slider-thumb {
@@ -2156,13 +2252,28 @@ body.resizing-row {
   box-shadow: 0 1px 2px rgba(0, 0, 0, 0.4);
 }
 .paint-opt input[type="color"] {
-  width: 24px;
-  height: 20px;
-  padding: 1px;
-  border: 1px solid #3a3a3a;
-  border-radius: 4px;
+  width: 32px;
+  height: 24px;
+  padding: 0;
+  border: 1px solid #52525b;
+  border-radius: 5px;
   background: transparent;
   cursor: pointer;
+  flex-shrink: 0;
+}
+.paint-opt input[type="color"]::-webkit-color-swatch-wrapper {
+  padding: 1px;
+}
+.paint-opt input[type="color"]::-webkit-color-swatch {
+  border: none;
+  border-radius: 3px;
+}
+.paint-opt-hex {
+  width: 68px !important;
+  font-family: var(--font-mono, ui-monospace, Consolas, monospace);
+  font-size: 0.68rem;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
 }
 .paint-opt input[type="checkbox"] {
   accent-color: #e94560;
@@ -2300,22 +2411,23 @@ body.resizing-row {
   color: #e94560;
 }
 
-/* ── Sample feedback chip (eyedropper) ──
- * Small swatch + hex label that pops at the sampled point, then fades out. */
+/* ── Sample feedback chip (eyedropper) — compact, readable ── */
 .pc-sample-chip {
   position: absolute;
   z-index: 60;
   display: flex;
   align-items: center;
-  gap: 5px;
-  padding: 3px 6px;
-  background: #1e1e1e;
+  gap: 6px;
+  padding: 4px 8px;
+  background: #1a1a1c;
   border: 1px solid #4a4a4a;
-  border-radius: 5px;
-  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.6);
+  border-radius: 6px;
+  box-shadow: 0 3px 10px rgba(0, 0, 0, 0.55);
   font-family: var(--font-mono, ui-monospace, Consolas, monospace);
-  font-size: 0.62rem;
-  color: #d4d4d4;
+  font-size: 0.72rem;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  color: #e8e8e8;
   pointer-events: none;
   transition:
     opacity 0.25s,
@@ -2326,14 +2438,30 @@ body.resizing-row {
   opacity: 0;
 }
 .pc-sample-swatch {
-  width: 10px;
-  height: 10px;
-  border-radius: 2px;
-  border: 1px solid rgba(255, 255, 255, 0.35);
+  width: 14px;
+  height: 14px;
+  border-radius: 3px;
+  border: 1px solid rgba(255, 255, 255, 0.4);
   flex-shrink: 0;
 }
 .pc-sample-hex {
   font-variant-numeric: tabular-nums;
+}
+.pc-sample-dest {
+  font-family: inherit;
+  font-size: 0.65rem;
+  font-weight: 500;
+  color: #9a9a9a;
+  border-left: 1px solid #3a3a3a;
+  padding-left: 6px;
+  white-space: nowrap;
+}
+
+/* Pulse the paint color well after eyedropper so the destination is obvious. */
+.paint-opt-color.paint-color-flash input[type="color"] {
+  outline: 2px solid #e94560;
+  outline-offset: 2px;
+  box-shadow: 0 0 0 4px rgba(233, 69, 96, 0.35);
 }
 
 /* ── Cleanup mask row: Add mask button ── */
@@ -2427,13 +2555,55 @@ body.resizing-row {
 /* ── Title-bar drag region (hidden native bar) ── */
 .drag-region {
   -webkit-app-region: drag;
-  padding-right: 140px;
   border-top-left-radius: 0 !important;
   border-top-right-radius: 0 !important;
+  padding-left: 12px;
+  padding-right: 12px;
 }
-.drag-region > *,
-.drag-region > * > * {
+/* Windows: leave room for titleBarOverlay caption buttons on the right. */
+html.platform-win32 .drag-region,
+html[data-platform="win32"] .drag-region {
+  padding-right: 140px !important;
+}
+/* macOS: no Windows right gutter — clearance is the left spacer only. */
+html.platform-darwin .drag-region,
+html[data-platform="darwin"] .drag-region {
+  padding-left: 2px !important;
+  padding-right: 8px !important;
+}
+/* Traffic-light spacer — macOS only (also forced via main-process insertCSS). */
+.titlebar-traffic-spacer {
+  display: none;
+  flex-shrink: 0;
+  width: 0;
+  min-width: 0;
+  height: 1px;
+}
+html.platform-darwin .titlebar-traffic-spacer,
+html[data-platform="darwin"] .titlebar-traffic-spacer {
+  display: block;
+  width: 78px;
+  min-width: 78px;
+}
+/*
+ * Titlebar is drag everywhere except real controls. Do NOT mark empty
+ * wrappers (paint-options / idle island) as no-drag — that eats blank space.
+ */
+.drag-region button,
+.drag-region a,
+.drag-region input,
+.drag-region select,
+.drag-region textarea,
+.drag-region label,
+.drag-region .menu-wrap,
+.drag-region .dynamic-island.active {
   -webkit-app-region: no-drag;
+}
+/* Idle / hidden island must not steal titlebar drag. */
+.drag-region .dynamic-island:not(.active),
+.drag-region .dynamic-island.hidden {
+  -webkit-app-region: drag !important;
+  pointer-events: none !important;
 }
 
 /* ── Header buttons ── */
@@ -3206,6 +3376,7 @@ body.resizing-row {
   position: relative;
   display: flex;
   align-items: center;
+  flex-shrink: 0;
   border: 1px solid rgba(255, 255, 255, 0.06);
   border-radius: 6px;
   background: rgba(255, 255, 255, 0.03);
@@ -3230,6 +3401,9 @@ body.resizing-row {
   background: transparent;
   border: none;
   cursor: pointer;
+  /* CJK wraps per glyph; keep labels on one line when the bar is tight */
+  white-space: nowrap;
+  flex-shrink: 0;
   transition:
     color 0.15s,
     background 0.15s;
@@ -3287,6 +3461,12 @@ body.resizing-row {
 .pipeline-preset-group .pipeline-chevron {
   border-radius: 0 5px 5px 0;
 }
+/* Short labels — must beat .pipeline-dropdown { min-width: 260px }. */
+.pipeline-dropdown.pipeline-preset-dropdown {
+  min-width: 0;
+  width: max-content;
+  max-width: none;
+}
 .pipeline-icon-btn {
   display: inline-flex;
   align-items: center;
@@ -3341,17 +3521,14 @@ body.resizing-row {
     border-color 0.15s,
     background-color 0.15s,
     box-shadow 0.15s;
-  -webkit-app-region: no-drag;
-}
-/* When tool options bar is active in header, float dynamic island just below header to avoid overlapping */
-#paint-options:not(.hidden) ~ #dynamic-island {
-  top: 38px;
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.65);
+  /* Idle island overlays the titlebar — keep it draggable until active. */
+  -webkit-app-region: drag;
 }
 .dynamic-island.active {
   opacity: 1;
   pointer-events: auto;
   transform: translateX(-50%) translateY(0);
+  -webkit-app-region: no-drag;
 }
 .dynamic-island.type-running {
   border-color: rgba(56, 189, 248, 0.45);
@@ -3551,12 +3728,18 @@ body.resizing-row {
   background: rgba(233, 69, 96, 0.15);
 }
 
-#btn-pipeline-restore {
+/* Header trailing actions — shared size so settings ≈ pipeline restore. */
+.header-action-btn {
   display: inline-flex;
   align-items: center;
+  justify-content: center;
   gap: 5px;
+  min-height: 28px;
   padding: 3px 9px;
   border-radius: 6px;
+  box-sizing: border-box;
+}
+#btn-pipeline-restore {
   border: 1px solid rgba(233, 69, 96, 0.35);
   background: rgba(233, 69, 96, 0.1);
   color: #f0f0f0;
@@ -3592,9 +3775,9 @@ body.resizing-row {
   left: 50%;
   transform: translateX(-50%);
   z-index: 100;
-  min-width: 170px;
-  max-width: 260px;
+  min-width: 260px;
   width: max-content;
+  max-width: min(560px, 94vw);
   background: #1a1a1c;
   border: 1px solid #333;
   border-radius: 8px;
@@ -3603,6 +3786,7 @@ body.resizing-row {
   display: flex;
   flex-direction: column;
   gap: 2px;
+  box-sizing: border-box;
 }
 .pipeline-dropdown.hidden {
   display: none;
@@ -3611,11 +3795,11 @@ body.resizing-row {
   padding: 6px 10px 4px;
   font-size: 0.65rem;
   font-weight: 600;
-  text-transform: uppercase;
   letter-spacing: 0.05em;
   color: #8a8a8a;
   border-bottom: 1px solid #282828;
   margin-bottom: 2px;
+  white-space: nowrap;
 }
 .pipeline-dropdown-list {
   display: flex;
@@ -3629,6 +3813,7 @@ body.resizing-row {
   font-size: 0.7rem;
   color: #6a6a6a;
   text-align: center;
+  white-space: nowrap;
 }
 .pipeline-dropdown-item {
   display: flex;
@@ -3638,6 +3823,8 @@ body.resizing-row {
   border-radius: 6px;
   cursor: pointer;
   transition: background 0.12s;
+  width: 100%;
+  box-sizing: border-box;
 }
 .pipeline-dropdown-item:hover {
   background: #2a2a2a;
@@ -3657,11 +3844,18 @@ body.resizing-row {
   font-size: 0.74rem;
   font-weight: 500;
   color: #d4d4d4;
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.pipeline-item-meta {
   display: flex;
   align-items: center;
-  gap: 5px;
+  gap: 4px;
+  flex: 0 0 auto;
   white-space: nowrap;
-  flex: 1;
 }
 .pipeline-dropdown-item.selected .pipeline-item-name {
   color: #fff;
@@ -3672,11 +3866,13 @@ body.resizing-row {
   font-weight: 700;
   padding: 1px 5px;
   border-radius: 999px;
-  text-transform: uppercase;
+  white-space: nowrap;
+  flex-shrink: 0;
 }
 .pipeline-badge-rec {
   background: rgba(122, 162, 247, 0.2);
   color: #7aa2f7;
+  text-transform: none;
 }
 .pipeline-badge-ready {
   background: rgba(76, 175, 80, 0.15);
@@ -3707,6 +3903,8 @@ body.resizing-row {
   color: #969696;
   cursor: pointer;
   text-align: left;
+  white-space: nowrap;
+  box-sizing: border-box;
   transition:
     color 0.1s,
     background 0.1s;

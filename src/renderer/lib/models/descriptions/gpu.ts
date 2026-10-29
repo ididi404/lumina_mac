@@ -4,7 +4,7 @@ import type { DeviceInfo, ModelInfo } from "../../../types";
 
 export interface GpuBadge {
   /** Resolved EP for the model's main session */
-  ep: "cuda" | "dml" | "cpu";
+  ep: "cuda" | "dml" | "coreml" | "cpu";
   /** Why the resolved EP is CPU (when ep === "cpu") */
   reason?: "disabled" | "unavailable" | "cpuOnly";
   /** Label of the EP the model wanted but this build lacks */
@@ -27,6 +27,7 @@ const COMPOSITE_PLANS: Record<
 const SHORT: Record<string, string> = {
   CUDAExecutionProvider: "cuda",
   DmlExecutionProvider: "dml",
+  CoreMLExecutionProvider: "coreml",
   CPUExecutionProvider: "cpu",
 };
 
@@ -34,11 +35,16 @@ const SHORT: Record<string, string> = {
 const WANTED_LABEL: Record<string, string> = {
   cuda: "CUDA",
   dml: "DirectML",
+  coreml: "Metal/CoreML",
+  metal: "Metal/CoreML",
   auto: "GPU",
 };
 
 function epLabel(ep: string): string {
-  return ep === "dml" ? "DirectML" : ep === "cuda" ? "CUDA" : "CPU";
+  if (ep === "dml") return "DirectML";
+  if (ep === "cuda") return "CUDA";
+  if (ep === "coreml") return "Metal/CoreML";
+  return "CPU";
 }
 
 /** The EP a `prefer` value resolves to on this build. No provider list
@@ -46,14 +52,22 @@ function epLabel(ep: string): string {
 function resolvePrefer(
   prefer: string,
   dev: DeviceInfo | null,
-): "cuda" | "dml" | "cpu" {
+): "cuda" | "dml" | "coreml" | "cpu" {
   const avail: string[] = dev?.providers?.length ? dev.providers : [];
   const has = (k: string) =>
     avail.length ? avail.some((p) => SHORT[p] === k) : true;
-  if (prefer === "cuda") return has("cuda") ? "cuda" : "cpu";
+  if (prefer === "cuda") {
+    if (has("cuda")) return "cuda";
+    if (has("coreml")) return "coreml"; // Apple GPU path when CUDA absent
+    return "cpu";
+  }
   if (prefer === "dml") return has("dml") ? "dml" : "cpu";
+  if (prefer === "coreml" || prefer === "metal")
+    return has("coreml") ? "coreml" : "cpu";
   if (prefer === "cpu") return "cpu";
-  if (has("cuda")) return "cuda"; // auto: CUDA → DirectML → CPU
+  // auto: CUDA → CoreML (Metal) → DirectML → CPU
+  if (has("cuda")) return "cuda";
+  if (has("coreml")) return "coreml";
   if (has("dml")) return "dml";
   return "cpu";
 }

@@ -29,12 +29,12 @@ export const generalTab = {
     sel.className = "field-select";
     const en = document.createElement("option");
     en.value = "en";
-    en.textContent = "English";
-    const id = document.createElement("option");
-    id.value = "id";
-    id.textContent = "Bahasa Indonesia";
+    en.textContent = i18n.t("settings.uiLang.en");
+    const zh = document.createElement("option");
+    zh.value = "zh";
+    zh.textContent = i18n.t("settings.uiLang.zh");
     sel.appendChild(en);
-    sel.appendChild(id);
+    sel.appendChild(zh);
 
     row.appendChild(label);
     row.appendChild(sel);

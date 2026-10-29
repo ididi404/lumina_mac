@@ -2,7 +2,7 @@
 import type { Page, ToolId } from "../types";
 
 export const CONST = {
-  DEFAULT_FONT_SIZE: 18,
+  DEFAULT_FONT_SIZE: 42,
   MIN_FONT_SIZE: 8,
   FONT_STEP: 1,
   FONT_FAMILY: "Arial, sans-serif",

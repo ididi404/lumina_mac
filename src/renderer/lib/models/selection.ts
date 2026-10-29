@@ -23,8 +23,13 @@ export function selectedReady(kind: string): boolean {
   return !!m && m.ready;
 }
 
-/** Every pipeline kind (detect / ocr / inpaint) has its selected model installed. */
+/** Pipeline kinds that gate the header warning / run buttons. */
+const PIPELINE_KINDS = ["detect", "ocr", "inpaint"] as const;
+
+/** Every pipeline kind has its selected model installed (unused catalog
+ *  alternatives and aux do not count). */
 export function allReady(): boolean {
-  const kinds = new Set(s.models.map((m) => m.kind).filter((k) => k !== "aux"));
-  return kinds.size > 0 && Array.from(kinds).every((k) => selectedReady(k));
+  const present = new Set(s.models.map((m) => m.kind));
+  const kinds = PIPELINE_KINDS.filter((k) => present.has(k));
+  return kinds.length > 0 && kinds.every((k) => selectedReady(k));
 }

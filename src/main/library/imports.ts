@@ -2,17 +2,23 @@
 import { BrowserWindow, dialog } from "electron";
 import { IPC } from "../../shared/bridge";
 import { handle } from "../core/ipc";
+import { t } from "../system/i18n";
 import { recordRecent } from "./recents";
 
-const IMAGE_FILTERS = [
-  { name: "Images", extensions: ["png", "jpg", "jpeg", "webp", "bmp"] },
-];
+function imageFilters() {
+  return [
+    {
+      name: t("dialog.filterImages"),
+      extensions: ["png", "jpg", "jpeg", "webp", "bmp"],
+    },
+  ];
+}
 
 export function registerImportHandlers(win: BrowserWindow): void {
   handle(IPC.importImage, async () => {
     const result = await dialog.showOpenDialog(win, {
-      title: "Import Manga Page",
-      filters: IMAGE_FILTERS,
+      title: t("dialog.importPage"),
+      filters: imageFilters(),
       properties: ["openFile"],
     });
     if (result.canceled || result.filePaths.length === 0) return null;
@@ -22,8 +28,8 @@ export function registerImportHandlers(win: BrowserWindow): void {
   });
   handle(IPC.importImages, async () => {
     const result = await dialog.showOpenDialog(win, {
-      title: "Import Manga Pages",
-      filters: IMAGE_FILTERS,
+      title: t("dialog.importPages"),
+      filters: imageFilters(),
       properties: ["openFile", "multiSelections"],
     });
     if (result.canceled || result.filePaths.length === 0) return [];

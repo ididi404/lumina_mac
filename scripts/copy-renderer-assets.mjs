@@ -15,6 +15,7 @@ const DST = path.join(ROOT, "dist", "renderer");
 
 mkdirSync(DST, { recursive: true });
 cpSync(path.join(SRC, "index.html"), path.join(DST, "index.html"));
+cpSync(path.join(SRC, "platform.js"), path.join(DST, "platform.js"));
 cpSync(path.join(SRC, "styles"), path.join(DST, "styles"), { recursive: true });
 cpSync(path.join(SRC, "i18n"), path.join(DST, "i18n"), { recursive: true });
 console.log(`Copied renderer assets -> ${DST}`);

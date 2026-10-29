@@ -10,12 +10,13 @@ export type PresetId = "full" | "clean";
 
 export interface PresetDef {
   id: PresetId;
-  label: string;
+  /** i18n key for the preset label */
+  labelKey: string;
 }
 
 export const PRESETS: PresetDef[] = [
-  { id: "full", label: "Full Pipeline" },
-  { id: "clean", label: "Clean Only" },
+  { id: "full", labelKey: "pipeline.presetFull" },
+  { id: "clean", labelKey: "pipeline.presetClean" },
 ];
 
 const PRESET_KEY = "lumina-pipeline-preset";
@@ -43,26 +44,27 @@ export function savePreset(id: PresetId): void {
 export const pipeline = {
   runDetection: detection.run,
   runDetectionAll: detection.runAll,
-  runOcr: ocr.run,
-  runTranslate: translate.run,
-  runInpaint: inpaint.run,
+  /** Standalone OCR / Translate / Inpaint — selected box only when highlighted. */
+  runOcr: () => ocr.run({ onlySelected: true }),
+  runTranslate: () => translate.run({ onlySelected: true }),
+  runInpaint: () => inpaint.run({ onlySelected: true }),
   async runAll(): Promise<void> {
     await detection.run();
     await ocr.run();
     await translate.run();
-    await inpaint.run();
+    await inpaint.run(); // full page — ignore selection
   },
   /** Run the given preset by id. */
   async runPreset(id: PresetId): Promise<void> {
     if (id === "clean") {
       await detection.run();
-      await inpaint.run();
+      await inpaint.run(); // full page
     } else {
       // "full"
       await detection.run();
       await ocr.run();
       await translate.run();
-      await inpaint.run();
+      await inpaint.run(); // full page
     }
   },
 };

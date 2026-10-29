@@ -1,5 +1,6 @@
 /** Session dirty flag + active save path. */
 import { state } from "../state";
+import * as i18n from "../i18n";
 
 let _dirty = false;
 let _savePath: string | null = null;
@@ -45,15 +46,19 @@ export function updateDirtyUI(): void {
   const path = getSavePath();
   const name = path ? (path.split(/[\\/]/).pop() as string) : "";
   if (el) el.textContent = name ? (isDirty() ? name + " •" : name) : "";
-  document.title = isDirty() ? "Lumina •" : "Lumina";
+  document.title = isDirty()
+    ? i18n.t("app.titleDirty")
+    : i18n.t("app.title");
 
   const hasPages = state.pages.length > 0;
   const saveBtn = document.getElementById("btn-save");
   const saveAsBtn = document.getElementById("btn-save-as");
+  const closeBtn = document.getElementById("btn-close");
   const exportBtn = document.getElementById("btn-export");
   const exportAllBtn = document.getElementById("btn-export-all");
   if (saveBtn) (saveBtn as HTMLButtonElement).disabled = !hasPages;
   if (saveAsBtn) (saveAsBtn as HTMLButtonElement).disabled = !hasPages;
+  if (closeBtn) (closeBtn as HTMLButtonElement).disabled = !hasPages;
   if (exportBtn) (exportBtn as HTMLButtonElement).disabled = !hasPages;
   if (exportAllBtn) (exportAllBtn as HTMLButtonElement).disabled = !hasPages;
 }

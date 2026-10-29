@@ -5,15 +5,19 @@ import path from "path";
 import { IPC } from "../../shared/bridge";
 import type { ModelsPathState } from "../../shared/bridge";
 import { handle, windowFromEvent } from "../core/ipc";
+import { t } from "./i18n";
 
 const CONFIG_FILE = "config.json";
 
 interface AppConfig {
   modelsPath: string;
+  /** UI language for native dialogs — synced from renderer. */
+  uiLang: "en" | "zh";
 }
 
 const DEFAULT_CONFIG: AppConfig = {
   modelsPath: "",
+  uiLang: "zh",
 };
 
 function configFilePath(): string {
@@ -63,10 +67,13 @@ export function registerConfigHandlers(): void {
   handle(IPC.modelsPathChoose, async (e) => {
     const win = windowFromEvent(e) ?? undefined;
     const result = await dialog.showOpenDialog(win!, {
-      title: "Choose models directory",
+      title: t("dialog.chooseModelsDir"),
       properties: ["openDirectory", "createDirectory"],
     });
     if (result.canceled || result.filePaths.length === 0) return null;
     return result.filePaths[0];
+  });
+  handle(IPC.setUiLang, (_e, code: string) => {
+    writeConfig({ uiLang: code === "en" ? "en" : "zh" });
   });
 }

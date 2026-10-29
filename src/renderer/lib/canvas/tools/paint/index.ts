@@ -12,24 +12,37 @@ import {
   refreshCursor,
   showSampleChip,
   hideSampleChip,
+  flashPaintColorWell,
 } from "./cursor";
+import * as i18n from "../../../i18n";
 import { handleBucket } from "./bucket";
-import { handleStroke } from "./stroke";
+import { handleStroke, cancelActiveStroke } from "./stroke";
 import { clearCleanupCanvas } from "./shared";
 import { clearSprite } from "./strokes";
+import { hitTransformer } from "../../hit-transformer";
 let _bound = false;
+let _stageBound = false;
 /** Previous tool — momentary eyedropper returns here after sampling */
 let _prevTool = "brush";
+/** Ignore paint strokes briefly after an eyedropper sample (ghost mouse/touch). */
+let _ignorePaintUntil = 0;
 
 // ── Stage interactions ──
 
+/** Allow re-bind after destroyStage() creates a fresh Konva stage. */
+export function resetStageBinding(): void {
+  _stageBound = false;
+}
+
 function bindStage(): void {
+  if (_stageBound) return;
   const bindWhenReady = function (): void {
     const stage = canvas.getStage();
     if (!stage) {
       setTimeout(bindWhenReady, 500);
       return;
     }
+    _stageBound = true;
 
     stage.on("mousemove", function (e) {
       if (!isPaintTool()) return;
@@ -49,6 +62,8 @@ function bindStage(): void {
     stage.on("mousedown touchstart", function (e) {
       if (!isPaintTool()) return;
       if (e.evt.button !== 0) return;
+      // Same rule as text create: never paint when grabbing box handles.
+      if (hitTransformer(e.target)) return;
       const page = state.getActivePage();
       if (!page) return;
       const pos = stage.getPointerPosition();
@@ -64,29 +79,47 @@ function bindStage(): void {
         if (hex) {
           setPaintColor(hex);
           syncOptions();
-          showSampleChip(pos.x, pos.y, hex, canvas.getScaleRatio());
+          showSampleChip(
+            pos.x,
+            pos.y,
+            hex,
+            canvas.getScaleRatio(),
+            i18n.t("paint.eyedropperDest"),
+          );
+          flashPaintColorWell();
         }
+        // Block brush/bucket on the synthetic follow-up click.
+        _ignorePaintUntil = Date.now() + 400;
         flashAlt();
         return;
       }
 
       if (tool === "eyedropper") {
         const hex = sampleComposite(page, img.x, img.y);
+        // Always return to brush after sampling. Lock blocks the ghost
+        // follow-up click from starting a stroke / demanding a mask.
+        _ignorePaintUntil = Date.now() + 400;
+        _prevTool = "brush";
+        tools.setActive("brush");
         if (hex) {
           setPaintColor(hex);
           syncOptions();
-          showSampleChip(pos.x, pos.y, hex, canvas.getScaleRatio());
+          // Show AFTER setActive — tool change would otherwise kill the chip.
+          showSampleChip(
+            pos.x,
+            pos.y,
+            hex,
+            canvas.getScaleRatio(),
+            i18n.t("paint.eyedropperDest"),
+          );
+          flashPaintColorWell();
         }
-        // Momentary: return to the previous tool. Resolve the target BEFORE
-        // calling setActive — the wrapped setActive would otherwise record
-        // "eyedropper" as the new _prevTool and the fallback would break.
-        const prev =
-          _prevTool && _prevTool !== "eyedropper" ? _prevTool : "brush";
-        _prevTool = prev;
-        tools.setActive(prev);
-        flashAlt(); // re-pulse — setActive cleared the held highlight
+        flashAlt();
         return;
       }
+
+      // Ghost mouse/touch after eyedropper must not paint / demand a mask.
+      if (Date.now() < _ignorePaintUntil) return;
 
       if (tool === "bucket") {
         handleBucket(page, img);
@@ -108,6 +141,8 @@ function syncOptions(): void {
   const s = paintSettings();
   const color = el.querySelector<HTMLInputElement>("#paint-color");
   if (color) color.value = s.color;
+  const colorHex = el.querySelector<HTMLInputElement>("#paint-color-hex");
+  if (colorHex) colorHex.value = s.color.toUpperCase();
   // Painted strokes use the new color — sprite is rebuilt on next stamp.
   clearSprite();
 }
@@ -130,8 +165,9 @@ const setAltIndicator = function (on: boolean): void {
 function clearAlt(): void {
   if (!_altDown) return;
   _altDown = false;
-  refreshCursor(false);
   setAltIndicator(false);
+  if (isPaintTool()) refreshCursor(false);
+  else hideCursor();
 }
 
 let _flashTimer = 0;
@@ -141,20 +177,21 @@ let _flashTimer = 0;
  *  this re-asserts it so the sampling moment is visibly indicated. */
 function flashAlt(): void {
   setAltIndicator(true);
-  refreshCursor(true);
+  if (isPaintTool()) refreshCursor(true);
   window.clearTimeout(_flashTimer);
   _flashTimer = window.setTimeout(function () {
     if (!_altDown) {
       setAltIndicator(false);
-      refreshCursor(false);
+      if (isPaintTool()) refreshCursor(false);
+      else hideCursor();
     }
   }, 300);
 }
 
 export function bindPaintTool(): void {
+  bindStage();
   if (_bound) return;
   _bound = true;
-  bindStage();
 
   // Keep the previous tool for the momentary eyedropper. Entering eyedropper
   // records whatever tool we came from (any tool); the momentary return out
@@ -188,12 +225,22 @@ export function bindPaintTool(): void {
 
 const _origOnToolChange = canvas.onToolChange;
 canvas.onToolChange = function (tool: string): void {
-  _origOnToolChange(tool);
+  // Toggle the options bar BEFORE the full canvas render so stage size
+  // matches the final layout (hiding after render left a one-switch lag).
   syncOptionsBar(tool);
-  // Switching tools cancels any pending momentary-eyedropper highlight.
-  clearAlt();
+  _origOnToolChange(tool);
+  // Cancel pending Alt/flash timers so they can't resurrect the brush ring.
+  window.clearTimeout(_flashTimer);
+  _altDown = false;
+  setAltIndicator(false);
   hideSampleChip();
-  if (!isPaintTool()) {
+  cancelActiveStroke();
+  const paint =
+    tool === "brush" ||
+    tool === "eraser" ||
+    tool === "bucket" ||
+    tool === "eyedropper";
+  if (!paint) {
     hideCursor();
     // Leaving a paint tool — reset the OS cursor on BOTH the container and
     // stage.content (paintool's mousemove only runs while a paint tool is
@@ -202,6 +249,8 @@ canvas.onToolChange = function (tool: string): void {
     const stage = canvas.getStage();
     if (container) container.style.cursor = "";
     if (stage && stage.content) stage.content.style.cursor = "";
+  } else {
+    refreshCursor(false);
   }
 };
 
@@ -223,7 +272,11 @@ export function syncOptionsBar(tool: string): void {
     if (n) n.style.display = on ? "" : "none";
   };
 
-  setVis(".paint-opt-color", tool === "brush" || tool === "bucket");
+  // Eyedropper also shows the well — so users see where the sample will go.
+  setVis(
+    ".paint-opt-color",
+    tool === "brush" || tool === "bucket" || tool === "eyedropper",
+  );
   setVis(".paint-opt-size", tool === "brush" || tool === "eraser");
   setVis(
     ".paint-opt-opacity",
@@ -236,6 +289,8 @@ export function syncOptionsBar(tool: string): void {
 
   const color = el.querySelector<HTMLInputElement>("#paint-color");
   if (color) color.value = s.color;
+  const colorHex = el.querySelector<HTMLInputElement>("#paint-color-hex");
+  if (colorHex) colorHex.value = s.color.toUpperCase();
   const size = el.querySelector<HTMLInputElement>("#paint-size");
   if (size) {
     size.value = String(s.size);

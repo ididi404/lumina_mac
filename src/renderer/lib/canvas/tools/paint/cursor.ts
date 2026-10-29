@@ -31,27 +31,40 @@ function cursorEl(): HTMLDivElement | null {
   return _cursor;
 }
 
+/** Hide and remove every paint cursor ghost from the canvas. */
 export function hideCursor(): void {
-  if (_cursor) _cursor.style.display = "none";
+  if (_cursor) {
+    _cursor.remove();
+    _cursor = null;
+  }
+  document.querySelectorAll("#paint-cursor").forEach(function (el) {
+    el.remove();
+  });
 }
 
 /** Re-render cursor at last known pointer position (Alt key toggle). */
 export function refreshCursor(altKey: boolean): void {
+  if (!isPaintTool()) {
+    hideCursor();
+    return;
+  }
   updateCursor(_lastX, _lastY, altKey);
 }
 
 /* ── Sample feedback chip ──
- * After an eyedropper click, show a small swatch + hex label at the sampled
- * point so the user instantly sees the color that was picked. Fades out.
+ * After an eyedropper click, show swatch + hex at the sample point.
+ * Stays visible across the post-sample tool switch (see _chipHoldUntil).
  */
 let _chip: HTMLDivElement | null = null;
 let _chipTimer = 0;
+let _chipHoldUntil = 0;
 
 export function showSampleChip(
   x: number,
   y: number,
   hex: string,
-  scale: number,
+  _scale: number,
+  destLabel?: string,
 ): void {
   const container = document.getElementById("canvas-container");
   if (!container) return;
@@ -60,38 +73,64 @@ export function showSampleChip(
     _chip.className = "pc-sample-chip";
     _chip.innerHTML =
       '<div class="pc-sample-swatch"></div>' +
-      '<div class="pc-sample-hex"></div>';
+      '<div class="pc-sample-hex"></div>' +
+      '<div class="pc-sample-dest"></div>';
     container.appendChild(_chip);
   }
   _chip.querySelector<HTMLElement>(".pc-sample-swatch")!.style.background = hex;
-  _chip.querySelector<HTMLElement>(".pc-sample-hex")!.textContent = hex;
+  _chip.querySelector<HTMLElement>(".pc-sample-hex")!.textContent =
+    hex.toUpperCase();
+  const dest = _chip.querySelector<HTMLElement>(".pc-sample-dest");
+  if (dest) {
+    if (destLabel) {
+      dest.textContent = destLabel;
+      dest.style.display = "";
+    } else {
+      dest.style.display = "none";
+    }
+  }
   _chip.style.left = x + "px";
   _chip.style.top = y + "px";
   _chip.style.display = "flex";
-  // 1px per image pixel — label stays readable even when zoomed way out.
-  const k = Math.max(0.7, Math.min(1.4, scale));
-  _chip.style.transform = "translate(-50%, -130%) scale(" + k + ")";
+  _chip.style.transform = "translate(-50%, -140%) scale(1)";
   _chip.classList.remove("pc-chip-out");
+  _chipHoldUntil = Date.now() + 1600;
   window.clearTimeout(_chipTimer);
   _chipTimer = window.setTimeout(function () {
     if (_chip) _chip.classList.add("pc-chip-out");
-  }, 900);
+  }, 1400);
 }
 
+/** Hide only if no fresh sample is still being shown. */
 export function hideSampleChip(): void {
+  if (Date.now() < _chipHoldUntil) return;
   if (_chip) _chip.style.display = "none";
+}
+
+/** Pulse the header paint-color well so the sample destination is obvious. */
+export function flashPaintColorWell(): void {
+  const wrap = document.querySelector(".paint-opt-color");
+  if (!wrap) return;
+  wrap.classList.remove("paint-color-flash");
+  void (wrap as HTMLElement).offsetWidth;
+  wrap.classList.add("paint-color-flash");
+  window.setTimeout(function () {
+    wrap.classList.remove("paint-color-flash");
+  }, 1200);
 }
 
 export function updateCursor(sx: number, sy: number, altKey = false): void {
   _lastX = sx;
   _lastY = sy;
+  // Never create / show the overlay outside paint tools — otherwise a
+  // refresh after tool-switch leaves a frozen brush ring on the canvas.
+  if (!isPaintTool()) {
+    hideCursor();
+    return;
+  }
   const el = cursorEl();
   if (!el) return;
   const tool = state.activeTool;
-  if (!isPaintTool()) {
-    el.style.display = "none";
-    return;
-  }
   // Alt held from any paint tool = momentary eyedropper look.
   const effective = altKey && tool !== "eyedropper" ? "eyedropper" : tool;
   const isStroke = effective === "brush" || effective === "eraser";

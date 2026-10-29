@@ -3,9 +3,64 @@ import { state } from "../state";
 import * as i18n from "../i18n";
 import { canvas } from "../canvas/index";
 import { history } from "../history";
+import { createIcons } from "../ui/icons";
 import { internalFontName } from "../utils/font-loader";
 import { loadGlobalTypography, saveGlobalTypography } from "../../types";
 import type { Page, PageLayer, Typography } from "../../types";
+import {
+  getEditingLayerId,
+  layerTextNodes,
+  stageToImg,
+} from "../canvas/tools/text/shared";
+import { getTransformer } from "../canvas/tools/text/transformer";
+import { syncEditorBox } from "../canvas/tools/text/editor";
+
+/**
+ * Same math as Konva.Transformer.rotateAroundCenter: keep the visual
+ * center fixed while changing rotation (node x/y is local top-left).
+ */
+function setLayerRotationPinned(layer: PageLayer, deg: number): void {
+  const node = layerTextNodes.find(function (nd) {
+    return nd.getAttr("layerId") === layer.id;
+  });
+  const box = node ? node.findOne(".layer-text-box") : null;
+  const sr = canvas.getScaleRatio();
+  const w = box ? box.width() : Math.max(1, layer.bbox.w * sr);
+  const h = box ? box.height() : Math.max(1, layer.bbox.h * sr);
+  const oldRad =
+    ((node ? node.rotation() : layer.typography.rotation) || 0) *
+    (Math.PI / 180);
+  const newRad = deg * (Math.PI / 180);
+  if (node) {
+    const x0 = node.x();
+    const y0 = node.y();
+    // Visual center under current rotation (Konva getCenter).
+    const cx =
+      x0 + (w / 2) * Math.cos(oldRad) + (h / 2) * Math.sin(-oldRad);
+    const cy =
+      y0 + (h / 2) * Math.cos(oldRad) + (w / 2) * Math.sin(oldRad);
+    // New top-left so the center stays put at newRad.
+    const x1 =
+      cx - (w / 2) * Math.cos(newRad) - (h / 2) * Math.sin(-newRad);
+    const y1 =
+      cy - (h / 2) * Math.cos(newRad) - (w / 2) * Math.sin(newRad);
+    node.rotation(deg);
+    node.position({ x: x1, y: y1 });
+    getTransformer()?.forceUpdate();
+    node.getLayer()?.batchDraw();
+    const p = stageToImg(x1, y1);
+    layer.bbox.x = p.x;
+    layer.bbox.y = p.y;
+    if (getEditingLayerId() === layer.id) syncEditorBox();
+  }
+  layer.typography.rotation = deg;
+  layer.bbox.rotation = deg;
+}
+
+/** Lucide icon inside an icon button. */
+function lucideIcon(name: string): string {
+  return '<i data-lucide="' + name + '"></i>';
+}
 
 const FONT_SIZE_PRESETS = [
   8, 9, 10, 12, 14, 16, 18, 20, 24, 28, 32, 36, 48, 64, 72, 96,
@@ -60,26 +115,35 @@ function _fontFamilyCss(internal: string | null): string {
   return internal;
 }
 
-// Single global document listener (registered once at module load) — closes
-// the open font picker on outside click / Escape. Element listeners die with
-// each sidebar rebuild; these module-level refs track the live menu.
+// Single global document listeners (registered once at module load) — close
+// open pickers/menus on outside click / Escape. Element listeners die with
+// each sidebar rebuild; these module-level refs track the live menus.
 let _openFontPicker: HTMLElement | null = null;
 let _openFontWrap: HTMLElement | null = null;
+let _openSizeWrap: HTMLElement | null = null;
 {
   document.addEventListener("mousedown", function (e) {
-    if (!_openFontPicker) return;
     const t = e.target as Node;
-    if (_openFontWrap && !_openFontWrap.contains(t)) {
+    if (_openFontPicker && _openFontWrap && !_openFontWrap.contains(t)) {
       _openFontPicker.hidden = true;
       _openFontPicker = null;
       _openFontWrap = null;
     }
+    if (_openSizeWrap && !_openSizeWrap.contains(t)) {
+      document.getElementById("type-size-presets")?.remove();
+      _openSizeWrap = null;
+    }
   });
   document.addEventListener("keydown", function (e) {
-    if (e.key === "Escape" && _openFontPicker) {
+    if (e.key !== "Escape") return;
+    if (_openFontPicker) {
       _openFontPicker.hidden = true;
       _openFontPicker = null;
       _openFontWrap = null;
+    }
+    if (_openSizeWrap) {
+      document.getElementById("type-size-presets")?.remove();
+      _openSizeWrap = null;
     }
   });
 }
@@ -114,9 +178,13 @@ let _pickerSize: { w: number; h: number } | null = null;
 }
 
 function selectedTextLayer(page: Page | null): PageLayer | null {
-  if (!page || !page._selectedLayerId) return null;
+  if (!page) return null;
+  // Editing counts as selected — create/resize must not leave type
+  // controls dead while the in-place editor is still open.
+  const id = page._selectedLayerId || getEditingLayerId();
+  if (!id) return null;
   const layer = page.layers.find(function (l) {
-    return l.id === page._selectedLayerId;
+    return l.id === id;
   });
   if (!layer) return null;
   if (layer.type === "text-dialogue" || layer.type === "text-free")
@@ -151,13 +219,14 @@ export const typeSection = {
       "</span>";
     const chev = document.createElement("button");
     chev.className = "type-collapse-btn";
-    chev.dataset.lucide = _collapsed ? "chevron-down" : "chevron-up";
+    chev.type = "button";
+    chev.innerHTML = lucideIcon(_collapsed ? "chevron-down" : "chevron-up");
     chev.title = i18n.t(_collapsed ? "type.expand" : "type.collapse");
     header.appendChild(chev);
     host.appendChild(header);
 
     const body = document.createElement("div");
-    body.className = "p-2 flex flex-col gap-1.5";
+    body.className = "p-2 flex flex-col gap-3";
     body.id = "type-body";
     host.appendChild(body);
 
@@ -174,8 +243,11 @@ export const typeSection = {
     row2.appendChild(this._field(i18n.t("type.style"), this._styleSelect()));
     body.appendChild(row2);
 
-    // Row 3: Alignment (full width — direction note removed)
-    const row3 = this._grid("minmax(0,1fr)");
+    // Row 3: Direction + Alignment (align icons follow direction)
+    const row3 = this._grid("minmax(0,1fr) minmax(0,1fr)");
+    row3.appendChild(
+      this._field(i18n.t("type.direction"), this._directionSegmented()),
+    );
     row3.appendChild(
       this._field(i18n.t("type.alignment"), this._alignSegmented()),
     );
@@ -193,27 +265,10 @@ export const typeSection = {
     );
     body.appendChild(row4);
 
-    // Row 5: Rotation stepper + compact Auto-fit on the same row
-    const row5 = this._grid("minmax(0,1fr) auto");
-    row5.appendChild(
+    // Row 5: Rotation
+    body.appendChild(
       this._field(i18n.t("type.rotation"), this._rotationField()),
     );
-    const autofitBtn = document.createElement("button");
-    autofitBtn.id = "type-autofit";
-    autofitBtn.className = "type-align-btn type-autofit-btn";
-    autofitBtn.textContent = i18n.t("type.autoFit");
-    autofitBtn.title = i18n.t("type.autoFit");
-    autofitBtn.addEventListener("click", function () {
-      const page: Page | null = state.getActivePage();
-      const layer = selectedTextLayer(page);
-      if (!layer) return;
-      layer.typography.fontSize = null; // re-arm auto-fit
-      canvas.render();
-      history.snapshot();
-      typeSection.refresh();
-    });
-    row5.appendChild(autofitBtn);
-    body.appendChild(row5);
   },
 
   /** Refresh control values from the selected layer */
@@ -223,8 +278,7 @@ export const typeSection = {
     const page: Page | null = state.getActivePage();
     const layer = selectedTextLayer(page);
     // Always visible; no selection edits the global defaults (which new
-    // layers inherit), selection edits the layer. Only layer-bound controls
-    // (auto-fit) are disabled without a selection.
+    // layers inherit), selection edits the layer.
     host.classList.remove("hidden");
     host.classList.toggle("type-disabled", false);
     host
@@ -234,10 +288,6 @@ export const typeSection = {
       .forEach(function (el) {
         el.disabled = false;
       });
-    if (!layer) {
-      const af = host.querySelector<HTMLButtonElement>("#type-autofit");
-      if (af) af.disabled = true;
-    }
     const t = layer ? layer.typography : _globalType;
     const set = function (id: string, value: string): void {
       const el = host.querySelector<HTMLInputElement | HTMLSelectElement>(
@@ -252,14 +302,34 @@ export const typeSection = {
       trig.style.fontFamily = _fontFamilyCss(t.fontFamily || null);
     }
     set("type-color", t.color);
-    set("type-size", t.fontSize === null ? "" : String(t.fontSize));
+    const sizeEl = host.querySelector<HTMLInputElement>("#type-size");
+    if (sizeEl && document.activeElement !== sizeEl) {
+      if (t.fontSize == null || !(t.fontSize > 0)) {
+        sizeEl.value = "";
+        sizeEl.placeholder = i18n.t("type.autoFit");
+      } else {
+        sizeEl.value = String(t.fontSize);
+        sizeEl.placeholder = i18n.t("type.autoFit");
+      }
+    }
     set("type-weight", String(t.fontWeight));
     set("type-style", t.fontStyle);
     set("type-stroke-color", t.strokeColor || "#ffffff");
     set("type-stroke-width", String(t.strokeWidth));
-    set("type-rotation", String(Math.round(t.rotation)));
+    const rot = Math.round(t.rotation);
+    set("type-rotation", String(rot));
+    const rotSlider = host.querySelector<HTMLInputElement>("#type-rotation-slider");
+    if (rotSlider && document.activeElement !== rotSlider)
+      rotSlider.value = String(rot);
 
-    // Alignment segmented active state
+    // Direction + alignment segmented active state
+    const dir = t.direction === "vertical" ? "vertical" : "horizontal";
+    host
+      .querySelectorAll<HTMLButtonElement>("[data-direction]")
+      .forEach(function (btn) {
+        btn.classList.toggle("active", btn.dataset.direction === dir);
+      });
+    typeSection._syncAlignIcons(host, dir);
     host
       .querySelectorAll<HTMLButtonElement>("[data-align]")
       .forEach(function (btn) {
@@ -281,9 +351,6 @@ export const typeSection = {
         "off",
         !(t.strokeColor && t.strokeWidth > 0),
       );
-    // Auto-fit active state (fontSize null = fitted by the box)
-    const autoFitBtn = host.querySelector<HTMLButtonElement>("#type-autofit");
-    if (autoFitBtn) autoFitBtn.classList.toggle("active", t.fontSize === null);
   },
 
   // ── Control factories ──
@@ -364,9 +431,10 @@ export const typeSection = {
     const closeBtn = document.createElement("button");
     closeBtn.type = "button";
     closeBtn.className = "font-picker-close";
-    closeBtn.textContent = "✕";
+    closeBtn.innerHTML = lucideIcon("x");
     head.appendChild(title);
     head.appendChild(closeBtn);
+    createIcons({ root: closeBtn });
     const search = document.createElement("input");
     search.type = "text";
     search.className = "font-picker-search";
@@ -433,9 +501,6 @@ export const typeSection = {
         list.appendChild(b);
       };
 
-      // Default is always first
-      item("", i18n.t("type.defaultFont"));
-
       const fonts = state.fontList || [];
       const byInternal = new Map<string, string>(
         fonts.map(function (f) {
@@ -459,12 +524,13 @@ export const typeSection = {
             item(r, fam, fam);
           });
         }
-        if (fonts.length > 0) {
-          const head = document.createElement("div");
-          head.className = "font-picker-head";
-          head.textContent = i18n.t("type.allFonts");
-          list.appendChild(head);
-        }
+        // "All fonts" sits flush under search (or under Recent) — Default
+        // belongs in this section, not above the category header.
+        const allHead = document.createElement("div");
+        allHead.className = "font-picker-head";
+        allHead.textContent = i18n.t("type.allFonts");
+        list.appendChild(allHead);
+        item("", i18n.t("type.defaultFont"));
         fonts.forEach(function (f) {
           item(internalFontName(f.family), f.family, f.family);
         });
@@ -583,16 +649,21 @@ export const typeSection = {
 
   _sizeField(): HTMLElement {
     const wrap = document.createElement("div");
-    wrap.className = "flex";
+    wrap.className = "flex items-center gap-1 min-w-0";
     const input = document.createElement("input");
     input.type = "number";
     input.id = "type-size";
     input.className = "field-select w-full min-w-0";
-    input.placeholder = i18n.t("type.auto");
+    input.placeholder = i18n.t("type.autoFit");
     input.min = "4";
     input.max = "300";
     input.addEventListener("change", function () {
-      const v = parseFloat(this.value);
+      const raw = this.value.trim();
+      if (!raw) {
+        typeSection._apply({ fontSize: null });
+        return;
+      }
+      const v = parseFloat(raw);
       typeSection._apply({
         fontSize: Number.isFinite(v) && v > 0 ? v : null,
       });
@@ -600,41 +671,56 @@ export const typeSection = {
     wrap.appendChild(input);
 
     const btn = document.createElement("button");
+    btn.type = "button";
     btn.className = "type-size-btn";
-    btn.innerHTML = "▾";
+    btn.innerHTML = lucideIcon("chevron-down");
     btn.title = i18n.t("type.presets");
-    btn.addEventListener("click", function () {
+    createIcons({ root: btn });
+    btn.addEventListener("click", function (e) {
+      e.stopPropagation();
       const existing = document.getElementById("type-size-presets");
       if (existing) {
         existing.remove();
+        _openSizeWrap = null;
         return;
       }
+      const page = state.getActivePage();
+      const layer = selectedTextLayer(page);
+      const cur = layer ? layer.typography.fontSize : _globalType.fontSize;
+      const autoOn = cur == null || !(cur > 0);
       const menu = document.createElement("div");
       menu.id = "type-size-presets";
       menu.className = "type-size-menu";
-      // Auto-fit option (reset to null = fit to box)
+      const closeMenu = function (): void {
+        menu.remove();
+        if (_openSizeWrap === wrap) _openSizeWrap = null;
+      };
       const autoItem = document.createElement("button");
-      autoItem.className = "type-size-item";
-      autoItem.textContent = i18n.t("type.auto");
+      autoItem.className =
+        "type-size-item" + (autoOn ? " active" : "");
+      autoItem.textContent = i18n.t("type.autoFit");
       autoItem.style.fontStyle = "italic";
       autoItem.addEventListener("click", function () {
         input.value = "";
+        input.placeholder = i18n.t("type.autoFit");
         typeSection._apply({ fontSize: null });
-        menu.remove();
+        closeMenu();
       });
       menu.appendChild(autoItem);
       FONT_SIZE_PRESETS.forEach(function (s) {
         const item = document.createElement("button");
-        item.className = "type-size-item";
+        item.className =
+          "type-size-item" + (!autoOn && cur === s ? " active" : "");
         item.textContent = String(s);
         item.addEventListener("click", function () {
           input.value = String(s);
           typeSection._apply({ fontSize: s });
-          menu.remove();
+          closeMenu();
         });
         menu.appendChild(item);
       });
       wrap.appendChild(menu);
+      _openSizeWrap = wrap;
     });
     wrap.appendChild(btn);
     return wrap;
@@ -677,18 +763,37 @@ export const typeSection = {
     return sel;
   },
 
+  _directionSegmented(): HTMLElement {
+    const wrap = document.createElement("div");
+    wrap.className = "type-align-seg type-align-seg-2";
+    wrap.id = "type-direction-seg";
+    for (const [value, labelKey, titleKey] of [
+      ["horizontal", "type.dirH", "type.directionHorizontal"],
+      ["vertical", "type.dirV", "type.directionVertical"],
+    ] as const) {
+      const btn = document.createElement("button");
+      btn.dataset.direction = value;
+      btn.className = "type-align-btn";
+      btn.title = i18n.t(titleKey);
+      btn.textContent = i18n.t(labelKey);
+      btn.addEventListener("click", function () {
+        typeSection._apply({
+          direction: value as "horizontal" | "vertical",
+        });
+      });
+      wrap.appendChild(btn);
+    }
+    return wrap;
+  },
+
   _alignSegmented(): HTMLElement {
     const wrap = document.createElement("div");
     wrap.className = "type-align-seg";
-    for (const [value, icon] of [
-      ["left", "align-left"],
-      ["center", "align-center"],
-      ["right", "align-right"],
-    ] as const) {
+    wrap.id = "type-align-seg";
+    for (const value of ["left", "center", "right"] as const) {
       const btn = document.createElement("button");
       btn.dataset.align = value;
       btn.className = "type-align-btn";
-      btn.innerHTML = '<i data-lucide="' + icon + '"></i>';
       btn.addEventListener("click", function () {
         typeSection._apply({ align: value });
       });
@@ -697,12 +802,48 @@ export const typeSection = {
     return wrap;
   },
 
+  /** Swap align labels: H → 左中右 / L C R, V → 上中下 / T M B. */
+  _syncAlignIcons(host: HTMLElement, direction: string): void {
+    const labels =
+      direction === "vertical"
+        ? ([
+            "type.alignVTop",
+            "type.alignVMiddle",
+            "type.alignVBottom",
+          ] as const)
+        : ([
+            "type.alignHLeft",
+            "type.alignHCenter",
+            "type.alignHRight",
+          ] as const);
+    const titles =
+      direction === "vertical"
+        ? ([
+            "type.alignTop",
+            "type.alignMiddle",
+            "type.alignBottom",
+          ] as const)
+        : ([
+            "type.alignLeft",
+            "type.alignCenter",
+            "type.alignRight",
+          ] as const);
+    host
+      .querySelectorAll<HTMLButtonElement>("[data-align]")
+      .forEach(function (btn, i) {
+        const key = labels[i];
+        if (!key) return;
+        btn.title = i18n.t(titles[i]);
+        btn.textContent = i18n.t(key);
+      });
+  },
+
   /** Border on/off toggle — works on the selected layer, or the global
    * default when nothing is selected. */
   _strokeToggle(): HTMLElement {
     const toggle = document.createElement("button");
     toggle.id = "type-stroke-on";
-    toggle.className = "type-align-btn type-square-toggle";
+    toggle.className = "type-square-toggle";
     toggle.innerHTML = '<i data-lucide="square"></i>';
     toggle.title = i18n.t("type.strokeColor");
     toggle.addEventListener("click", function () {
@@ -742,8 +883,9 @@ export const typeSection = {
 
   _strokeWidth(): HTMLElement {
     const minus = document.createElement("button");
+    minus.type = "button";
     minus.className = "type-step-btn";
-    minus.textContent = "−";
+    minus.innerHTML = lucideIcon("minus");
     const num = document.createElement("input");
     num.type = "number";
     num.id = "type-stroke-width";
@@ -752,8 +894,9 @@ export const typeSection = {
     num.max = "20";
     num.step = "0.5";
     const plus = document.createElement("button");
+    plus.type = "button";
     plus.className = "type-step-btn";
-    plus.textContent = "+";
+    plus.innerHTML = lucideIcon("plus");
     minus.addEventListener("click", function () {
       num.value = String(Math.max(0, parseFloat(num.value || "0") - 0.5));
       num.dispatchEvent(new Event("change"));
@@ -774,6 +917,7 @@ export const typeSection = {
     wrap.appendChild(minus);
     wrap.appendChild(num);
     wrap.appendChild(plus);
+    createIcons({ root: wrap });
     return wrap;
   },
 
@@ -784,47 +928,69 @@ export const typeSection = {
 
   _rotationField(): HTMLElement {
     const wrap = document.createElement("div");
-    wrap.className = "flex items-center gap-1 type-stepper type-stepper-r";
-    const minus = document.createElement("button");
-    minus.className = "type-step-btn";
-    minus.textContent = "−";
+    wrap.className = "flex items-center gap-1.5 type-rotation-row min-w-0";
+    const slider = document.createElement("input");
+    slider.type = "range";
+    slider.id = "type-rotation-slider";
+    slider.className = "type-rotation-slider";
+    slider.min = "-180";
+    slider.max = "180";
+    slider.step = "1";
+    slider.value = "0";
     const num = document.createElement("input");
     num.type = "number";
     num.id = "type-rotation";
-    num.className = "field-select type-width-num";
-    num.min = "-45";
-    num.max = "45";
+    num.className = "field-select type-rotation-num";
+    num.min = "-180";
+    num.max = "180";
     num.step = "1";
     num.value = "0";
-    const plus = document.createElement("button");
-    plus.className = "type-step-btn";
-    plus.textContent = "+";
     const reset = document.createElement("button");
+    reset.type = "button";
     reset.id = "type-rotation-reset";
     reset.className = "type-step-btn";
-    reset.textContent = "↺";
+    reset.innerHTML = lucideIcon("rotate-ccw");
     reset.title = i18n.t("type.rotationReset");
-    const commit = function (): void {
-      const v = Math.max(-45, Math.min(45, parseFloat(num.value || "0")));
-      typeSection._apply({ rotation: Number.isFinite(v) ? v : 0 });
+    const syncUi = function (n: number): void {
+      slider.value = String(n);
+      num.value = String(n);
     };
-    minus.addEventListener("click", function () {
-      num.value = String(Math.max(-45, parseFloat(num.value || "0") - 1));
-      commit();
+    /** Same center-pin as the canvas rotate handle. */
+    const applyLive = function (raw: string): number {
+      const v = Math.max(-180, Math.min(180, parseFloat(raw || "0")));
+      const n = Number.isFinite(v) ? Math.round(v) : 0;
+      syncUi(n);
+      const page = state.getActivePage();
+      const layer = selectedTextLayer(page);
+      if (!layer) {
+        _globalType.rotation = n;
+        saveGlobalTypography(_globalType);
+        return n;
+      }
+      setLayerRotationPinned(layer, n);
+      return n;
+    };
+    const commit = function (raw: string): void {
+      applyLive(raw);
+      history.snapshot();
+      typeSection.refresh();
+    };
+    slider.addEventListener("input", function () {
+      applyLive(this.value);
     });
-    plus.addEventListener("click", function () {
-      num.value = String(Math.min(45, parseFloat(num.value || "0") + 1));
-      commit();
+    slider.addEventListener("change", function () {
+      commit(this.value);
+    });
+    num.addEventListener("change", function () {
+      commit(this.value);
     });
     reset.addEventListener("click", function () {
-      num.value = "0";
-      commit();
+      commit("0");
     });
-    num.addEventListener("change", commit);
-    wrap.appendChild(minus);
+    wrap.appendChild(slider);
     wrap.appendChild(num);
-    wrap.appendChild(plus);
     wrap.appendChild(reset);
+    createIcons({ root: wrap });
     return wrap;
   },
 
@@ -844,12 +1010,18 @@ export const typeSection = {
       typeSection.refresh();
       return;
     }
+    if (patch.rotation !== undefined) {
+      const rest = Object.assign({}, patch);
+      delete rest.rotation;
+      Object.assign(layer.typography, rest);
+      setLayerRotationPinned(layer, patch.rotation);
+      history.snapshot();
+      typeSection.refresh();
+      return;
+    }
     Object.assign(layer.typography, patch);
-    // The box rotates WITH the text (Photoshop-style) — keep the bbox
-    // rotation in sync so nodeFactory spins the whole group identically.
-    if (patch.rotation !== undefined) layer.bbox.rotation = patch.rotation;
     canvas.render();
     history.snapshot();
-    typeSection.refresh(); // keep toggles/segments/alerts in sync
+    typeSection.refresh();
   },
 };
