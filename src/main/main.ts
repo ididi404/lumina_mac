@@ -1,5 +1,5 @@
 /** App entry — boot, window, backend, handlers. */
-import { app, BrowserWindow, Menu } from "electron";
+import { app, BrowserWindow, Menu, nativeImage } from "electron";
 import { IPC } from "../shared/bridge";
 import { send } from "./core/ipc";
 import { onDownloadBusyChange } from "./core/mutex";
@@ -10,6 +10,7 @@ import {
   getWindow,
   setPendingOpenPath,
 } from "./core/window";
+import { appIconPath } from "./core/paths";
 import { clearExtractedCache, prepareCache } from "./backend/cache";
 import { spawnBackend, stopBackend } from "./backend/spawn";
 import { registerApiHandlers } from "./backend/proxy";
@@ -31,6 +32,12 @@ import { registerProjectHandlers } from "./library/project";
 import { registerExportHandlers } from "./library/export";
 import { registerTempCacheHandlers } from "./library/temp-cache";
 import { registerLogHandler } from "./core/logger";
+
+/** Dock / menu bar name — must run before ready (dev still launches Electron.app). */
+app.setName("Lumina");
+if (process.platform === "win32") {
+  app.setAppUserModelId("com.lumina.app");
+}
 
 /** Wire all IPC handlers for a new window. */
 function registerAll(win: BrowserWindow): void {
@@ -58,9 +65,19 @@ function bootWindow(): BrowserWindow {
 
 onDownloadBusyChange((busy) => send(getWindow(), IPC.runtimeBusy, busy));
 
+/** Apply Dock icon in unpackaged runs (backup for patched electron.icns). */
+function applyDockIcon(): void {
+  if (!app.dock) return;
+  const iconPath = appIconPath();
+  if (!iconPath) return;
+  const img = nativeImage.createFromPath(iconPath);
+  if (!img.isEmpty()) app.dock.setIcon(img);
+}
+
 app.whenReady().then(async () => {
   Menu.setApplicationMenu(null);
   registerLogHandler();
+  applyDockIcon();
 
   const gotLock = app.requestSingleInstanceLock();
   if (!gotLock) {
@@ -76,6 +93,7 @@ app.whenReady().then(async () => {
   prepareCache();
   await spawnBackend();
   bootWindow();
+  applyDockIcon();
 
   if (installerVariant() === "cuda" && !isCudaRuntimeReady()) {
     await ensureCudaRuntime();

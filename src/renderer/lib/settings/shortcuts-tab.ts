@@ -3,14 +3,52 @@ import * as i18n from "../i18n";
 import { ui } from "../ui";
 import { shortcuts } from "../shortcuts";
 import { createIcons } from "../ui/icons";
+import {
+  getZoomWheelMode,
+  setZoomWheelMode,
+  type ZoomWheelMode,
+} from "../canvas/viewport";
 
 type ActionId = Parameters<typeof shortcuts.get>[0] extends infer A ? A : never;
 
 export const shortcutsTab = {
   build(pane: HTMLElement): void {
     pane.innerHTML = "";
+
     const section = document.createElement("div");
     section.className = "settings-section";
+
+    // Same row layout as keybindings so the control lines up with .shortcut-key.
+    const zoomRow = document.createElement("div");
+    zoomRow.className = "shortcut-row";
+    const zoomLabel = document.createElement("span");
+    zoomLabel.className = "shortcut-name";
+    zoomLabel.textContent = i18n.t("shortcuts.zoomWheel");
+    const zoomSel = document.createElement("select");
+    zoomSel.id = "settings-zoom-wheel";
+    zoomSel.className = "field-select shortcut-zoom-select";
+    const optOff = document.createElement("option");
+    optOff.value = "off";
+    optOff.textContent = i18n.t("shortcuts.zoomWheelOff");
+    const optWheel = document.createElement("option");
+    optWheel.value = "wheel";
+    optWheel.textContent = i18n.t("shortcuts.zoomWheelOn");
+    zoomSel.appendChild(optOff);
+    zoomSel.appendChild(optWheel);
+    zoomSel.value = getZoomWheelMode();
+    zoomSel.addEventListener("change", function () {
+      const mode = (zoomSel.value === "wheel" ? "wheel" : "off") as ZoomWheelMode;
+      setZoomWheelMode(mode);
+    });
+    // Spacer matches .shortcut-reset so the select aligns with key buttons.
+    const zoomPad = document.createElement("span");
+    zoomPad.className = "shortcut-reset shortcut-zoom-pad";
+    zoomPad.setAttribute("aria-hidden", "true");
+    zoomRow.appendChild(zoomLabel);
+    zoomRow.appendChild(zoomSel);
+    zoomRow.appendChild(zoomPad);
+    section.appendChild(zoomRow);
+
     const list = document.createElement("div");
     list.id = "shortcut-list";
     section.appendChild(list);
@@ -18,11 +56,20 @@ export const shortcutsTab = {
   },
 
   refresh(): void {
+    const sel = document.getElementById(
+      "settings-zoom-wheel",
+    ) as HTMLSelectElement | null;
+    if (sel) sel.value = getZoomWheelMode();
     this._render();
   },
 
   resetAll(): void {
     shortcuts.resetAll();
+    setZoomWheelMode("off");
+    const sel = document.getElementById(
+      "settings-zoom-wheel",
+    ) as HTMLSelectElement | null;
+    if (sel) sel.value = "off";
   },
 
   refreshTitles(): void {

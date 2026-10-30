@@ -44,6 +44,7 @@ const config = {
   ],
   win: {
     target: [{ target: "nsis", arch: ["x64"] }],
+    icon: "icon.ico",
     fileAssociations: [
       {
         ext: "lmi",

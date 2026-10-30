@@ -9,6 +9,30 @@ const ZOOM_MAX = 64;
 const ZOOM_MIN = 0.1;
 const ZOOM_STEP = 1.2;
 
+const ZOOM_WHEEL_KEY = "lumina-zoom-wheel";
+
+/** How the mouse / Magic Mouse wheel drives canvas zoom. */
+export type ZoomWheelMode = "off" | "wheel";
+
+/** Default off — Magic Mouse scroll is too twitchy for zoom. */
+export function getZoomWheelMode(): ZoomWheelMode {
+  try {
+    const v = localStorage.getItem(ZOOM_WHEEL_KEY);
+    if (v === "wheel") return "wheel";
+  } catch {
+    /* ignore */
+  }
+  return "off";
+}
+
+export function setZoomWheelMode(mode: ZoomWheelMode): void {
+  try {
+    localStorage.setItem(ZOOM_WHEEL_KEY, mode === "wheel" ? "wheel" : "off");
+  } catch {
+    /* ignore */
+  }
+}
+
 /** Clamp pan so the image can never be dragged fully out of view */
 function _clampPan(): void {
   const container = document.getElementById("canvas-container");
@@ -79,13 +103,14 @@ canvas.zoomReset = function () {
   canvas.scheduleRender();
 };
 
-/** Wheel: ctrl+wheel or plain wheel = zoom at cursor */
+/** Wheel zoom — gated by Settings → Shortcuts → zoom wheel mode (default off). */
 canvas._initWheelZoom = function (): void {
   const container = document.getElementById("canvas-container");
   if (!container) return;
   container.addEventListener(
     "wheel",
     function (e) {
+      if (getZoomWheelMode() !== "wheel") return;
       const page = state.getActivePage();
       if (!page) return;
       e.preventDefault();
@@ -95,7 +120,10 @@ canvas._initWheelZoom = function (): void {
           y: e.clientY,
         });
       } else {
-        canvas.setZoom((state._zoomLevel || 1) / ZOOM_STEP);
+        canvas.setZoom((state._zoomLevel || 1) / ZOOM_STEP, {
+          x: e.clientX,
+          y: e.clientY,
+        });
       }
     },
     { passive: false },

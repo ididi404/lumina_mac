@@ -54,18 +54,15 @@ export function makeNode(layer: PageLayer, text: string): Konva.Group {
     rotation: rot,
   });
 
-  const empty = !text;
   group.add(
     new Konva.Rect({
       name: "layer-text-box",
       width: lw,
       height: lh,
       fill: "transparent",
-      // Always draw a frame — filled boxes used to be stroke-less and looked
-      // "missing" next to green detection overlays.
-      stroke: empty ? "rgba(233, 69, 96, 0.55)" : "rgba(233, 69, 96, 0.45)",
-      strokeWidth: 1,
-      dash: empty ? [6, 4] : undefined,
+      // Border only while selected (see syncTransformerSelection).
+      strokeEnabled: false,
+      strokeWidth: 0,
       cornerRadius: 2,
     }),
   );
@@ -120,11 +117,11 @@ export function refreshNodeGlyphs(
   });
   const typo = layer.typography;
   const imgFontSize = _resolveFontSize(layer, text);
-  const empty = !text;
   if (box) {
-    box.stroke(empty ? "rgba(233, 69, 96, 0.55)" : "rgba(233, 69, 96, 0.45)");
-    box.strokeWidth(1);
-    box.dash(empty ? [6, 4] : []);
+    // Keep hit target; selection chrome is applied by syncTransformerSelection.
+    box.strokeEnabled(false);
+    box.strokeWidth(0);
+    box.dash([]);
   }
   if (!text) {
     group.getLayer()?.batchDraw();

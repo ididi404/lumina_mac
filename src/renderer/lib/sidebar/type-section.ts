@@ -205,8 +205,7 @@ export const typeSection = {
 
   /** Build DOM once; visibility toggled on each sidebar render */
   build(host: HTMLElement): void {
-    host.className =
-      "type-section shrink-0 border-b border-surface-3 overflow-y-auto";
+    host.className = "type-section border-b border-surface-3";
     host.id = "type-section";
     host.classList.toggle("type-collapsed", _collapsed);
 

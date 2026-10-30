@@ -54,11 +54,11 @@ export function initProgressHandlers(): void {
     }
   });
 
-  // Main pushes busy state so the Models tab can gate its download buttons.
+  // Main download mutex — used for CUDA runtime / update serialization.
+  // Do NOT mirror into model progressCbs (that falsely looks like a model
+  // download and can leave the UI thinking a transfer is in flight).
   window.lumina.onRuntimeBusy((busy) => {
     s.runtimeBusy = busy;
-    for (const cb of s.progressCbs)
-      cb({ running: busy, progress: 0, downloaded: 0, total: 0, done: false });
     for (const cb of s.runtimeCbs)
       cb({ state: busy ? "downloading" : "ready" });
   });

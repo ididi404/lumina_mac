@@ -163,13 +163,15 @@ function layerRowHTML(page: Page, layer: PageLayer, idx: number): string {
   const isText = layer.type === "text-dialogue" || layer.type === "text-free";
   const canRetranslate = isText && (layer.source || "").trim().length > 0;
 
+  // Drag only from the header row — never the expanded editor/textarea,
+  // otherwise selecting or dragging text inside the input moves the layer.
   let html =
     '<div class="layer-row' +
     (selected ? " selected" : "") +
     '" data-layer-id="' +
     esc(layer.id) +
-    '" draggable="true">' +
-    '<div class="layer-row-main">' +
+    '">' +
+    '<div class="layer-row-main" draggable="true">' +
     '<span class="layer-index">' +
     (idx + 1) +
     "</span>" +
@@ -362,10 +364,12 @@ export function wireEvents(): void {
   document
     .querySelectorAll<HTMLElement>(".layer-row[data-layer-id]")
     .forEach(function (el) {
-      el.addEventListener("dragstart", function (e) {
+      const handle = el.querySelector<HTMLElement>(".layer-row-main") || el;
+
+      handle.addEventListener("dragstart", function (e) {
         const t = e.target as HTMLElement;
-        // Never start a drag from a button or the inline editor
-        if (t.closest("button, textarea, input")) {
+        // Never start a drag from a button (or if somehow fired from editor).
+        if (t.closest("button, textarea, input, .layer-editor")) {
           e.preventDefault();
           return;
         }
@@ -382,7 +386,7 @@ export function wireEvents(): void {
         }
       });
 
-      el.addEventListener("dragend", function () {
+      handle.addEventListener("dragend", function () {
         el.classList.remove("dragging");
         clearDropIndicators();
         dragId = null;
@@ -455,6 +459,14 @@ export function wireEvents(): void {
             field === "source" ? layer.source || "" : layer.translation || "";
       }
       ta.addEventListener("click", function (e) {
+        e.stopPropagation();
+      });
+      // Stop the parent row from treating text selection as a layer drag.
+      ta.addEventListener("mousedown", function (e) {
+        e.stopPropagation();
+      });
+      ta.addEventListener("dragstart", function (e) {
+        e.preventDefault();
         e.stopPropagation();
       });
       ta.addEventListener("blur", function () {

@@ -1,13 +1,22 @@
 <!doctype html>
-<html lang="en">
+<html lang="en" style="background:#0e0e10;color-scheme:dark">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="color-scheme" content="dark" />
     <meta
       http-equiv="Content-Security-Policy"
       content="default-src 'self' https://cdn.jsdelivr.net; script-src 'self' https://cdn.jsdelivr.net; style-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; img-src 'self' file: data:; font-src 'self' data: file:; connect-src 'self';"
     />
     <title>Lumina</title>
+    <!-- Paint dark before Tailwind CDN finishes — prevents white→black flash. -->
+    <style>
+      html,
+      body {
+        background: #0e0e10;
+        color-scheme: dark;
+      }
+    </style>
     <script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4"></script>
     <style type="text/tailwindcss">
       @theme {
@@ -35,6 +44,7 @@
   </head>
   <body
     class="bg-surface-0 text-text-secondary h-screen flex flex-col overflow-hidden text-xs font-sans select-none px-1.5 pb-1.5 pt-0 gap-1.5"
+    style="background:#0e0e10"
   >
     <!-- Header -->
     <header

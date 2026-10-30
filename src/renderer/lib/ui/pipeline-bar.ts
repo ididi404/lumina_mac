@@ -143,6 +143,23 @@ function _initDrag(): void {
   _dragHandle.addEventListener("mousedown", onMouseDown);
 }
 
+/** True when the workspace has an open page (pipeline belongs on the canvas). */
+function _hasOpenPage(): boolean {
+  return state.pages.length > 0;
+}
+
+/** Show/hide the header restore chip — only while a page is open. */
+function _setRestoreVisible(visible: boolean): void {
+  const restoreBtn = document.getElementById("btn-pipeline-restore");
+  if (!restoreBtn) return;
+  if (visible && _hasOpenPage()) {
+    restoreBtn.classList.remove("hidden");
+    createIcons({ root: restoreBtn });
+  } else {
+    restoreBtn.classList.add("hidden");
+  }
+}
+
 /** Minimize / Expand toggle with smooth animation */
 function _setMinimized(min: boolean): void {
   if (!_bar) return;
@@ -152,13 +169,11 @@ function _setMinimized(min: boolean): void {
     _hideTimer = null;
   }
 
-  const restoreBtn = document.getElementById("btn-pipeline-restore");
-
   if (min) {
     localStorage.setItem(MINIMIZED_STORAGE_KEY, "1");
     _bar.classList.add("minimized-state");
-    restoreBtn?.classList.remove("hidden");
-    if (restoreBtn) createIcons({ root: restoreBtn });
+    // Restore chip only when there is a page — never on the landing screen.
+    _setRestoreVisible(true);
 
     // Instantly transition active toast to Header Dynamic Island
     ui.syncToastPlacement();
@@ -168,7 +183,15 @@ function _setMinimized(min: boolean): void {
     }, 220);
   } else {
     localStorage.setItem(MINIMIZED_STORAGE_KEY, "0");
-    restoreBtn?.classList.add("hidden");
+    _setRestoreVisible(false);
+
+    if (!_hasOpenPage()) {
+      // Stay hidden on landing — same as the expanded default before open.
+      _bar.classList.add("hidden");
+      _bar.classList.remove("minimized-state");
+      ui.syncToastPlacement();
+      return;
+    }
 
     _bar.classList.remove("hidden");
     // Force layout reflow before removing minimized-state for transition to trigger
@@ -471,11 +494,13 @@ export const pipelineBar = {
       _setDefaultPosition();
     }
 
-    // Restore minimized state
-    const isMin = localStorage.getItem(MINIMIZED_STORAGE_KEY) === "1";
-    if (isMin) {
-      _setMinimized(true);
+    // Remember minimized preference only — do not surface the restore chip
+    // or floating bar until show() (an image/project is open).
+    if (localStorage.getItem(MINIMIZED_STORAGE_KEY) === "1") {
+      _bar.classList.add("minimized-state");
+      _bar.classList.add("hidden");
     }
+    _setRestoreVisible(false);
 
     // Minimize button on floating bar
     _bar
@@ -489,6 +514,7 @@ export const pipelineBar = {
     const restoreBtn = document.getElementById("btn-pipeline-restore");
     restoreBtn?.addEventListener("click", (e) => {
       e.stopPropagation();
+      if (!_hasOpenPage()) return;
       _setMinimized(false);
     });
 
@@ -558,15 +584,17 @@ export const pipelineBar = {
   /** Show pipeline bar or restore button when canvas/image is active */
   show(): void {
     if (!_bar) return;
+    if (!_hasOpenPage()) {
+      this.hide();
+      return;
+    }
     const isMin = localStorage.getItem(MINIMIZED_STORAGE_KEY) === "1";
-    const restoreBtn = document.getElementById("btn-pipeline-restore");
     if (isMin) {
       _bar.classList.add("hidden");
       _bar.classList.add("minimized-state");
-      restoreBtn?.classList.remove("hidden");
-      if (restoreBtn) createIcons({ root: restoreBtn });
+      _setRestoreVisible(true);
     } else {
-      restoreBtn?.classList.add("hidden");
+      _setRestoreVisible(false);
       _bar.classList.remove("hidden");
       void _bar.offsetWidth;
       _bar.classList.remove("minimized-state");
@@ -581,8 +609,12 @@ export const pipelineBar = {
   hide(): void {
     if (!_bar) return;
     _closeDropdowns();
+    if (_hideTimer) {
+      clearTimeout(_hideTimer);
+      _hideTimer = null;
+    }
     _bar.classList.add("hidden");
-    document.getElementById("btn-pipeline-restore")?.classList.add("hidden");
+    _setRestoreVisible(false);
     ui.syncToastPlacement();
   },
 

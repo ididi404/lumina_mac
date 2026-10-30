@@ -31,8 +31,8 @@ const config = {
   files: ["dist/main/**", "dist/preload/**", "dist/renderer/**"],
   publish: {
     provider: "github",
-    owner: "lumina-tl",
-    repo: "lumina",
+    owner: "ididi404",
+    repo: "lumina_mac",
     channel: "macos",
   },
   extraResources: [
@@ -44,6 +44,7 @@ const config = {
   ],
   mac: {
     category: "public.app-category.graphics-design",
+    icon: "icon.icns",
     target: [
       { target: "dmg", arch: [ARCH_NORM] },
       { target: "zip", arch: [ARCH_NORM] },
@@ -55,6 +56,8 @@ const config = {
     entitlements: path.join(ROOT, "assets", "entitlements.mac.plist"),
     entitlementsInherit: path.join(ROOT, "assets", "entitlements.mac.plist"),
     extendInfo: {
+      CFBundleName: "Lumina",
+      CFBundleDisplayName: "Lumina",
       CFBundleDocumentTypes: [
         {
           CFBundleTypeName: "Lumina Project",
@@ -78,6 +81,22 @@ const config = {
   },
   dmg: {
     artifactName: "Lumina-${version}-mac-${arch}.${ext}",
+    title: "${productName} ${version}",
+    // Multi-res TIFF (1x 680×440 + 2x 1360×880). Must be a single TIFF —
+    // pointing at .png makes electron-builder copy only the 1x file and drop
+    // diana.k@example.org, which leaves a blurry Finder background on Retina.
+    background: path.join(ROOT, "assets", "dmg", "background.tiff"),
+    iconSize: 128,
+    iconTextSize: 13,
+    window: {
+      width: 680,
+      height: 440,
+    },
+    // Icon centers: App left, Applications right — closer gap, larger icons.
+    contents: [
+      { x: 220, y: 205, type: "file" },
+      { x: 460, y: 205, type: "link", path: "/Applications" },
+    ],
   },
 };
 

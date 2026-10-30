@@ -109,7 +109,11 @@ export const models = {
 
   /** Download the given model ids; empty array = all missing. */
   async download(ids: string[]): Promise<void> {
-    await window.lumina.downloadModel(ids);
+    const res = (await window.lumina.downloadModel(ids)) as unknown as {
+      error?: string;
+      status?: string;
+    } | null;
+    if (res?.error) throw new Error(res.error);
     await this.check();
   },
 

@@ -154,6 +154,8 @@ i18n.init().then(function () {
     openProject: (path?: string) => project.open(path),
     openImagePath: (path: string) => openImagePaths([path]),
   });
+  // No pages yet — keep pipeline (and restore chip) off the empty canvas.
+  pipelineBar.hide();
 
   // ── Wire buttons ──
   document

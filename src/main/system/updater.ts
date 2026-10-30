@@ -5,6 +5,7 @@ import { IPC } from "../../shared/bridge";
 import type { CheckUpdateResult, UpdateProgress } from "../../shared/bridge";
 import { handle, send } from "../core/ipc";
 import { withDownloadMutex } from "../core/mutex";
+import { isPackagedBuild } from "../core/paths";
 
 const { autoUpdater } = updaterPkg;
 
@@ -78,7 +79,7 @@ function checkOnce(): Promise<CheckUpdateResult> {
 export function registerUpdaterHandlers(target: BrowserWindow | null): void {
   win = target;
   handle(IPC.checkForUpdates, async () => {
-    if (!app.isPackaged) return { available: false, error: "dev" };
+    if (!isPackagedBuild()) return { available: false, error: "dev" };
     if (downloadedVersion) {
       return {
         available: true,

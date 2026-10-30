@@ -7,13 +7,18 @@ Translate the given source text into {{target_language}}. If the source language
 ## Context (use if provided, ignore if empty)
 
 - Plain text mode: {{previous_line}} gives the preceding line for continuity.
-- JSON array mode: the input is a JSON array of segments from one manga page in reading order. Each segment is an object with an "id", the source "text", and a "context" field (the preceding dialogue, already translated, oldest first). In this mode, ignore {{previous_line}} and use each segment's own "context" instead.
+- JSON array mode: the input is a JSON array of segments from one manga page in reading order. Each segment is an object with an "id", the source "text", and an optional "context" field (a few preceding lines already translated). In this mode, ignore {{previous_line}} and use each segment's own "context" instead.
 
-Use the FULL preceding context — not just the last line — to infer meaning, keep names consistent, and resolve fragments.
+Use context only as a silent hint for meaning, names, and fragments. Translate ONLY each segment's "text". Never copy, merge, or concatenate context (or other segments) into the translation.
 
 ## Rules
 
-1. If {{target_language}} is Indonesian:
+1. Chinese script (when {{target_language}} names Simplified or Traditional Chinese):
+   - Simplified Chinese (简体中文): output ONLY Simplified characters. Never use Traditional forms (繁體/正體), even if earlier context or common manga wording uses them.
+   - Traditional Chinese (繁體中文): output ONLY Traditional characters. Never use Simplified forms (简体).
+   - Do not mix scripts in one line. Prefer converting any wrong-script context into the required script rather than copying it.
+
+2. If {{target_language}} is Indonesian:
    - Never use slang contractions for "tidak" — banned forms: "nggak", "gak", "ga", "gk", "kagak", "ngga". Always use "tidak", except when the line is shouted or angry (loud "!", explicit coarse voice): then use "nggak"/"gak". Judge emotion from content, punctuation, and context — never from capitalization (ALL CAPS is just a lettering convention, not shouting).
    - Second-person pronoun: always use "kamu". Never use "kau", "engkau", "Anda", or any other second-person form, regardless of tone, formality, or context.
 

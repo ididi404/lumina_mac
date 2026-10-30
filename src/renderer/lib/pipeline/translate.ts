@@ -10,6 +10,7 @@ import { canvas } from "../canvas/index";
 import { sidebar } from "../sidebar";
 import { normalizeAutoText } from "./text-norm";
 import { revealTypesetLayers } from "./reveal-text";
+import { dialogueLayerForTextIdx } from "../canvas/detection/selection";
 import type { TextDetection } from "../../types";
 import { log } from "../logger";
 import {
@@ -170,12 +171,17 @@ export const translate = {
         texts: withText.map(function (d) {
           return d.text;
         }),
+        // Continuity context only — never fall back to OCR source text.
+        // Dumping prior English lines into "context" made models merge several
+        // bubbles into one translation. Cap to the last few translated lines.
         previousLines: (function () {
+          const MAX_PREV = 3;
           const ctx: string[] = [];
-          const acc: string[] = [];
+          const translated: string[] = [];
           withText.forEach(function (d) {
-            ctx.push(acc.join(" / "));
-            acc.push(d.translated || d.text || "");
+            ctx.push(translated.slice(-MAX_PREV).join(" / "));
+            const tr = (d.translated || "").trim();
+            if (tr) translated.push(tr);
           });
           return ctx;
         })(),
@@ -199,9 +205,8 @@ export const translate = {
         if (!r) return;
         det.translated = normalizeAutoText(r.text || "") || det.text || "";
         const detIdx = page.textDetections.indexOf(det);
-        const layer = page.layers[detIdx];
-        if (layer && layer.type === "text-dialogue")
-          layer.translation = det.translated;
+        const layer = dialogueLayerForTextIdx(page, detIdx);
+        if (layer) layer.translation = det.translated;
       });
 
       // Hand canvas to typeset text boxes (pipeline does this after inpaint).

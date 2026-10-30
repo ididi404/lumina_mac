@@ -34,7 +34,9 @@ export interface LuminaAPI {
   getDevice(): Promise<DeviceInfo>;
   setUseGpu(useGpu: boolean): Promise<DeviceInfo>;
   checkModel(): Promise<ModelCheck>;
-  downloadModel(models?: string[]): Promise<void>;
+  downloadModel(
+    models?: string[],
+  ): Promise<{ error?: string; status?: string } | void>;
   cancelDownload(): Promise<void>;
   onDownloadProgress(cb: (msg: DownloadProgress) => void): void;
   getFonts(): Promise<FontInfo[]>;

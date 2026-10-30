@@ -715,18 +715,20 @@ body.resizing-settings * {
 
 /* ── Shortcut settings ── */
 .shortcut-row {
-  display: flex;
+  display: grid;
+  grid-template-columns: 1fr 110px 21px;
   align-items: center;
-  gap: 8px;
+  column-gap: 8px;
   padding: 6px 0;
 }
 .shortcut-name {
-  flex: 1;
   font-size: 0.78rem;
   color: #d4d4d4;
+  min-width: 0;
 }
 .shortcut-key {
-  min-width: 110px;
+  width: 100%;
+  box-sizing: border-box;
   padding: 4px 10px;
   background: #0e0e10;
   border: 1px solid #333;
@@ -739,6 +741,17 @@ body.resizing-settings * {
   transition:
     border-color 0.15s,
     color 0.15s;
+}
+/* Same column as .shortcut-key; keep shared .field-select chrome. */
+.shortcut-zoom-select {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 4px 10px;
+  border-radius: 4px;
+}
+.shortcut-zoom-pad {
+  visibility: hidden;
+  pointer-events: none;
 }
 .shortcut-key:hover {
   border-color: #555;
@@ -759,13 +772,16 @@ body.resizing-settings * {
   }
 }
 .shortcut-reset {
-  padding: 4px;
+  width: 21px;
+  height: 21px;
+  padding: 0;
   background: transparent;
   border: none;
   color: #6a6a6a;
   cursor: pointer;
   display: flex;
   align-items: center;
+  justify-content: center;
   transition: color 0.15s;
 }
 .shortcut-reset:hover {
@@ -1211,8 +1227,18 @@ body.resizing-settings * {
 
 /* ── Type section (koharu-style typography inspector) ── */
 .type-section {
-  /* Height is set in sidebar.render() to fit content; no CSS cap that clips. */
+  /* Default: size to content (no JS height race on startup).
+     Cap so tabs + list still get ~96px; overflow scrolls inside. */
+  flex-shrink: 0;
+  height: auto;
+  max-height: calc(100% - 96px);
+  overflow-x: hidden;
+  overflow-y: auto;
   background: rgba(14, 14, 16, 0.4);
+}
+.type-section.type-collapsed {
+  max-height: none;
+  overflow: visible;
 }
 /* The type section follows the sidebar width — controls stretch/fill their
    grid tracks so resizing never leaves a gap on the right. */

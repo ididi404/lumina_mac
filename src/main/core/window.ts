@@ -3,7 +3,7 @@ import { BrowserWindow, shell } from "electron";
 import path from "path";
 import { IPC } from "../../shared/bridge";
 import { handle, send } from "./ipc";
-import { MAIN_DIR } from "./paths";
+import { MAIN_DIR, appIconPath } from "./paths";
 
 let win: BrowserWindow | null = null;
 let allowClose = false;
@@ -43,12 +43,18 @@ export function createWindow(): BrowserWindow {
     x: 16,
     y: Math.max(0, Math.round((HEADER_H - TRAFFIC_H) / 2) + TRAFFIC_Y_NUDGE),
   };
+  const icon = appIconPath();
+  // Match --color-surface-0 so the native window isn't white before CSS/UI paint.
+  const BG = "#0e0e10";
   win = new BrowserWindow({
     width: 1400,
     height: 900,
     minWidth: 1200,
     minHeight: 700,
     title: "Lumina",
+    backgroundColor: BG,
+    show: false,
+    ...(icon ? { icon } : {}),
     // macOS: hiddenInset + traffic lights on the left.
     // Windows: hidden + titleBarOverlay controls on the right.
     titleBarStyle: isMac ? "hiddenInset" : "hidden",
@@ -70,13 +76,11 @@ export function createWindow(): BrowserWindow {
     },
   });
   win.loadFile(path.join(MAIN_DIR, "../renderer/index.html"));
-  // Re-assert after show — some Electron/macOS builds ignore constructor y
-  // until the window is on screen.
-  if (isMac) {
-    win.once("ready-to-show", () => {
-      win?.setWindowButtonPosition(trafficPos);
-    });
-  }
+  // Show once the first frame is ready — avoids a white native chrome flash.
+  win.once("ready-to-show", () => {
+    if (isMac) win?.setWindowButtonPosition(trafficPos);
+    win?.show();
+  });
   // Force chrome insets from the main process — do NOT depend on data-platform
   // (renderer class can race CSP / load order and silently fail).
   win.webContents.on("dom-ready", () => {

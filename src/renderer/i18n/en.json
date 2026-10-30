@@ -422,6 +422,9 @@
   "shortcuts.reset": "Reset to default",
   "shortcuts.resetAll": "Reset All",
   "shortcuts.done": "Done",
+  "shortcuts.zoomWheel": "Scroll to zoom",
+  "shortcuts.zoomWheelOff": "Off",
+  "shortcuts.zoomWheelOn": "Mouse wheel",
 
   "error.prefix": "Error: {{message}}",
 

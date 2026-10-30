@@ -409,13 +409,23 @@ export const modelsTab = {
 
   /** Start a model download and disable the triggering button. */
   _download(btn: HTMLButtonElement, modelId: string): void {
-    if (!modelId || models.isBusy()) return;
+    if (!modelId) return;
+    if (models.isBusy()) {
+      ui.toast(i18n.t("models.runtimeBusy"), "info", 2500);
+      return;
+    }
     btn.disabled = true;
     btn.textContent = i18n.t("models.downloading");
-    models.download([modelId]).catch(() => {
-      btn.disabled = false;
-      btn.textContent = i18n.t("models.download");
-    });
+    models
+      .download([modelId])
+      .catch((err: unknown) => {
+        ui.toast(String((err as Error)?.message || err), "error", 6000);
+      })
+      .finally(() => {
+        btn.disabled = false;
+        btn.textContent = i18n.t("models.download");
+        void models.check();
+      });
   },
 
   /** Disable every model download button while the CUDA runtime installs. */

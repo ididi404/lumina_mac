@@ -130,9 +130,26 @@ def device_info():
 @app.post("/device/configure")
 def device_configure(req: DeviceConfigureRequest):
     """Toggle GPU acceleration for this backend process (no restart needed)."""
-    from utils.runtime import configure
+    from utils.runtime import configure, get_device_info
 
-    return configure(req.useGpu)
+    try:
+        return configure(req.useGpu)
+    except Exception as e:
+        # Never 500 here — Settings treats configure failure as "no GPU".
+        log.error(f"device/configure failed: {e}")
+        try:
+            return get_device_info()
+        except Exception as e2:
+            log.error(f"device/configure fallback failed: {e2}")
+            return {
+                "provider": "cpu",
+                "ep": "CPUExecutionProvider",
+                "providers": ["CPUExecutionProvider"],
+                "gpus": [],
+                "gpuName": None,
+                "onnxRuntime": None,
+                "accelerated": False,
+            }
 
 
 from utils.memory import ModelTracker

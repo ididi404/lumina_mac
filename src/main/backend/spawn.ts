@@ -4,7 +4,7 @@ import { app } from "electron";
 import fs from "fs";
 import http from "http";
 import path from "path";
-import { PROJECT_ROOT } from "../core/paths";
+import { PROJECT_ROOT, isPackagedBuild } from "../core/paths";
 import { resolveModelsDir } from "../system/config";
 import { activeOrtDir } from "../models/runtime/variant";
 import { BACKEND_PORT } from "./client";
@@ -39,7 +39,7 @@ interface PythonLaunch {
 }
 
 function resolveLaunch(): PythonLaunch {
-  if (app.isPackaged) {
+  if (isPackagedBuild()) {
     const res = process.resourcesPath;
     const pyRoot = path.join(res, "python");
     const pyApp = path.join(res, "backend");

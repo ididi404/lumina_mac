@@ -75,33 +75,25 @@ export function syncTransformerSelection(): void {
       })
     : null;
 
-  // Always paint text-box chrome so typeset layers stay visible even when
-  // green detection overlays are also on.
+  // Selection chrome only — unselected boxes stay borderless so they don't
+  // clutter the page preview.
   layerTextNodes.forEach(function (n) {
     const box = n.findOne<Konva.Rect>(".layer-text-box");
     if (!box) return;
     if (n === node) {
       box.stroke("#e94560");
       box.strokeWidth(2);
+      box.strokeEnabled(true);
       box.dash([]);
       return;
     }
-    const glyphs = n.findOne<Konva.Text>(".layer-text-glyphs");
-    const hasText = !!(glyphs && glyphs.text() && glyphs.text().trim());
-    if (hasText) {
-      // Filled: light solid outline so the box reads as a text frame.
-      box.stroke("rgba(233, 69, 96, 0.45)");
-      box.strokeWidth(1);
-      box.dash([]);
-    } else {
-      box.stroke("rgba(233, 69, 96, 0.55)");
-      box.strokeWidth(1);
-      box.dash([6, 4]);
-    }
+    box.strokeEnabled(false);
+    box.strokeWidth(0);
+    box.dash([]);
   });
 
   // Det-box mode: green chrome owns dialogue picks — only a still-selected
-  // free-text keeps red handles. Still leave box strokes painted above.
+  // free-text keeps red handles.
   if (state.showDetBoxes && !(selLayer && selLayer.type === "text-free" && node)) {
     transformer.nodes([]);
     layerTextNodes.forEach(function (n) {

@@ -141,56 +141,75 @@ export function selectPreset(
 
 // ── Word wrap (horizontal) ──
 
-const CJK_RE = /[\u3000-\u9fff\uf900-\ufaff\uff00-\uffef]/;
-
-/** Split a word longer than maxWidth at hyphens into tokens */
-function splitLongWord(
+/**
+ * Break a single over-wide token to fit maxWidth.
+ * Prefer hyphens for Latin; otherwise split by measured characters so CJK
+ * runs and long English words always wrap when the box is narrow enough.
+ */
+function breakToken(
   word: string,
   size: number,
   typo: Typography,
   maxWidth: number,
 ): string[] {
+  if (!word) return [];
   if (measureLineWidth(word, size, typo) <= maxWidth) return [word];
+
   const hyphenIdx = word.indexOf("-");
-  if (hyphenIdx === -1 || hyphenIdx === word.length - 1) return [word];
-  const head = word.slice(0, hyphenIdx + 1); // keep hyphen on token
-  const rest = splitLongWord(word.slice(hyphenIdx + 1), size, typo, maxWidth);
-  return [head, ...rest];
+  if (hyphenIdx > 0 && hyphenIdx < word.length - 1) {
+    const head = word.slice(0, hyphenIdx + 1);
+    if (measureLineWidth(head, size, typo) <= maxWidth) {
+      return [
+        head,
+        ...breakToken(word.slice(hyphenIdx + 1), size, typo, maxWidth),
+      ];
+    }
+  }
+
+  const parts: string[] = [];
+  let current = "";
+  for (const ch of Array.from(word)) {
+    const test = current + ch;
+    if (current && measureLineWidth(test, size, typo) > maxWidth) {
+      parts.push(current);
+      current = ch;
+    } else {
+      current = test;
+    }
+  }
+  if (current) parts.push(current);
+  return parts.length ? parts : [word];
 }
 
+/**
+ * Wrap text to maxWidth. Prefer spaces; any token that still exceeds the
+ * width is split by character (CJK and long Latin words).
+ */
 export function wordWrap(
   text: string,
   size: number,
   typo: Typography,
   maxWidth: number,
 ): string[] {
-  // CJK / no-space text: wrap by measured width (char-by-char), NOT one
-  // char per line — that made horizontal Chinese look vertical.
-  if (!/\s/.test(text.replace(/\n/g, "")) && CJK_RE.test(text)) {
-    const lines: string[] = [];
-    for (const para of text.split("\n")) {
-      let current = "";
-      for (const ch of Array.from(para)) {
-        const test = current + ch;
-        if (current && measureLineWidth(test, size, typo) > maxWidth) {
-          lines.push(current);
-          current = ch;
-        } else {
-          current = test;
-        }
-      }
-      lines.push(current);
-    }
-    return lines.length ? lines : [""];
-  }
   const lines: string[] = [];
   for (const para of text.split("\n")) {
+    if (!para) {
+      lines.push("");
+      continue;
+    }
+    // No whitespace → one token, break by measured width.
+    if (!/\s/.test(para)) {
+      const parts = breakToken(para, size, typo, maxWidth);
+      if (parts.length) lines.push(...parts);
+      else lines.push("");
+      continue;
+    }
     let current = "";
     for (const rawWord of para.split(/\s+/)) {
       if (!rawWord) continue;
-      for (const word of splitLongWord(rawWord, size, typo, maxWidth)) {
+      for (const word of breakToken(rawWord, size, typo, maxWidth)) {
         const test = current ? current + " " + word : word;
-        if (measureLineWidth(test, size, typo) > maxWidth && current) {
+        if (current && measureLineWidth(test, size, typo) > maxWidth) {
           lines.push(current);
           current = word;
         } else {
@@ -217,7 +236,6 @@ export function fitHorizontal(
   const maxH = boxH * preset.heightUsageRatio;
 
   let bestSize = preset.minFont;
-  let bestLines = wordWrap(text, preset.minFont, typo, maxW);
   let bestScore = -1;
   let status: FitStatus = "ok";
   let foundPerfect = false;
@@ -233,7 +251,6 @@ export function fitHorizontal(
       if (score > bestScore) {
         bestScore = score;
         bestSize = fs;
-        bestLines = wrapped;
         status = "ok";
         foundPerfect = true;
       }
@@ -246,7 +263,6 @@ export function fitHorizontal(
         if (score > bestScore) {
           bestScore = score;
           bestSize = fs;
-          bestLines = wrapped;
           status = "overflow-tolerated";
         }
       }
@@ -254,16 +270,14 @@ export function fitHorizontal(
     }
   }
 
-  // Finalize with safety margin
+  // Finalize with safety margin — always re-wrap at finalSize so breaks match
+  // the glyphs that are actually drawn.
   const finalSize = Math.max(
     preset.minFont,
     Math.floor(bestSize * preset.fontScale),
   );
   const finalSpacing = Math.max(1, Math.floor(finalSize * preset.spacingRatio));
-  const finalWrap =
-    foundPerfect || status === "overflow-tolerated"
-      ? bestLines
-      : wordWrap(text, finalSize, typo, maxW);
+  const finalWrap = wordWrap(text, finalSize, typo, maxW);
   const m = measureMultiline(finalWrap, finalSize, finalSpacing, typo);
 
   if (!foundPerfect && status !== "overflow-tolerated") {

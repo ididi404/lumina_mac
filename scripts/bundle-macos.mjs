@@ -23,6 +23,8 @@ import {
   existsSync,
   statSync,
   chmodSync,
+  unlinkSync,
+  linkSync,
 } from "fs";
 import { Readable } from "stream";
 import { pipeline } from "stream/promises";
@@ -40,6 +42,7 @@ const ORT_VER = "1.23.2";
 const REQ_BACKEND = path.join(SCRIPTS, "requirements-backend.txt");
 const REQ_ORT = path.join(SCRIPTS, "requirements-ort-macos.txt");
 
+/** ORT wheel names that share site-packages with the backend. */
 const COMMON_DEPS = new Set([
   "flatbuffers",
   "mpmath",
@@ -49,6 +52,18 @@ const COMMON_DEPS = new Set([
   "sympy",
   "coloredlogs",
   "humanfriendly",
+]);
+
+/**
+ * Actually extract into the app. sympy/mpmath are ORT tooling deps (~31 MB)
+ * and are not required for CoreML inference; coloredlogs/humanfriendly are
+ * optional logging helpers.
+ */
+const RUNTIME_COMMON_DEPS = new Set([
+  "flatbuffers",
+  "numpy",
+  "packaging",
+  "protobuf",
 ]);
 
 /** Host arch → pip platform tags + PBS naming. */
@@ -143,6 +158,116 @@ function copyTree(src, dst, skip = () => false) {
   }
 }
 
+/** Recursively delete matching paths under root. */
+function rmMatching(root, pred) {
+  if (!existsSync(root)) return;
+  for (const entry of readdirSync(root, { withFileTypes: true })) {
+    const p = path.join(root, entry.name);
+    if (entry.isDirectory()) {
+      if (pred(entry.name, p, true)) rmSync(p, { recursive: true, force: true });
+      else rmMatching(p, pred);
+    } else if (pred(entry.name, p, false)) {
+      rmSync(p, { force: true });
+    }
+  }
+}
+
+/**
+ * Drop packaging fat that is unused at runtime.
+ * Keeps one python binary (hardlinks aliases) and strips ORT tooling.
+ */
+function slimBundle(out, pyRoot, sitePkgs, ortRoot) {
+  const before = Number(mbOf(out));
+
+  // 1) One CPython binary — PBS ships three 17 MB copies after copyFileSync.
+  const binDir = path.join(pyRoot, "bin");
+  const primary = path.join(binDir, "python3.13");
+  if (existsSync(primary)) {
+    for (const name of ["python", "python3"]) {
+      const alias = path.join(binDir, name);
+      try {
+        if (existsSync(alias)) unlinkSync(alias);
+        linkSync(primary, alias);
+        chmodSync(alias, 0o755);
+      } catch (e) {
+        console.warn(`  hardlink ${name}: ${e.message}`);
+      }
+    }
+  }
+  for (const name of readdirSync(binDir)) {
+    if (
+      /^(idle|pip|pydoc)/.test(name) ||
+      name.endsWith("-config") ||
+      name.endsWith("2to3")
+    ) {
+      rmSync(path.join(binDir, name), { force: true });
+    }
+  }
+
+  // 2) Headers / docs / stdlib IDE & ensurepip.
+  for (const rel of [
+    "include",
+    "share",
+    path.join("lib", "python3.13", "idlelib"),
+    path.join("lib", "python3.13", "tkinter"),
+    path.join("lib", "python3.13", "turtledemo"),
+    path.join("lib", "python3.13", "ensurepip"),
+    path.join("lib", "python3.13", "config-3.13-darwin"),
+  ]) {
+    rmSync(path.join(pyRoot, rel), { recursive: true, force: true });
+  }
+
+  // 3) Pip + unused ORT transitive packages (if somehow present).
+  for (const name of [
+    "pip",
+    "sympy",
+    "mpmath",
+    "coloredlogs",
+    "humanfriendly",
+  ]) {
+    rmSync(path.join(sitePkgs, name), { recursive: true, force: true });
+  }
+  rmMatching(sitePkgs, (name, _p, isDir) => {
+    if (!isDir) return name.endsWith(".pyi") || name === "py.typed";
+    return (
+      name === "pip" ||
+      name.startsWith("pip-") ||
+      name.startsWith("sympy-") ||
+      name.startsWith("mpmath-") ||
+      name.startsWith("coloredlogs-") ||
+      name.startsWith("humanfriendly-") ||
+      name === "__pycache__" ||
+      name.endsWith(".dist-info")
+    );
+  });
+
+  // 4) ORT: keep capi + package init; drop offline tools / transformers.
+  const ortPkg = path.join(ortRoot, "onnxruntime");
+  for (const name of [
+    "tools",
+    "datasets",
+    "transformers",
+    "quantization",
+    "backend",
+  ]) {
+    rmSync(path.join(ortPkg, name), { recursive: true, force: true });
+  }
+  rmMatching(ortRoot, (name, _p, isDir) => {
+    if (isDir) return name === "__pycache__" || name.endsWith(".dist-info");
+    return name.endsWith(".pyi") || name === "py.typed";
+  });
+
+  // 5) Backend source caches.
+  rmMatching(path.join(out, "backend"), (name, _p, isDir) => {
+    return isDir ? name === "__pycache__" : name.endsWith(".pyc");
+  });
+
+  const after = Number(mbOf(out));
+  console.log(
+    `Slimmed bundle: ${before} MB → ${after} MB (−${(before - after).toFixed(0)} MB)`,
+  );
+}
+
 function pipCmd() {
   const candidates = [
     path.join(ROOT, "venv", "bin", "python"),
@@ -207,6 +332,7 @@ function downloadWheels(dest, reqFile, arch) {
   }
 
   const tags = ARCH_MAP[arch].pipTags;
+  const needOrt = reqFile === REQ_ORT;
   let lastErr = null;
   for (const tag of tags) {
     console.log(`Trying pip platform tag: ${tag}`);
@@ -215,9 +341,12 @@ function downloadWheels(dest, reqFile, arch) {
     const r = spawnSync(pip, [...base, "--platform", tag], {
       stdio: "inherit",
     });
-    if (r.status === 0 && listWheels(dest).some((w) => w.startsWith("onnxruntime"))) {
-      return;
-    }
+    const wheels = listWheels(dest);
+    const ok =
+      r.status === 0 &&
+      wheels.length > 0 &&
+      (!needOrt || wheels.some((w) => w.startsWith("onnxruntime")));
+    if (ok) return;
     lastErr = r.status;
   }
   throw new Error(
@@ -288,10 +417,20 @@ async function main() {
     extractZip(path.join(wheelsBackend, w), sitePkgs);
   }
   const commonWheels = listWheels(wheelsOrt).filter(
-    (w) => COMMON_DEPS.has(distName(w)) && !w.startsWith("onnxruntime"),
+    (w) =>
+      RUNTIME_COMMON_DEPS.has(distName(w)) && !w.startsWith("onnxruntime"),
+  );
+  const skippedOrtDeps = listWheels(wheelsOrt).filter(
+    (w) =>
+      COMMON_DEPS.has(distName(w)) &&
+      !RUNTIME_COMMON_DEPS.has(distName(w)) &&
+      !w.startsWith("onnxruntime"),
   );
   console.log(
-    `Extracting ${commonWheels.length} common wheels -> site-packages`,
+    `Extracting ${commonWheels.length} common wheels -> site-packages` +
+      (skippedOrtDeps.length
+        ? ` (skip ${skippedOrtDeps.map(distName).join(", ")})`
+        : ""),
   );
   for (const w of commonWheels) {
     extractZip(path.join(wheelsOrt, w), sitePkgs);
@@ -331,6 +470,9 @@ async function main() {
     ),
   );
 
+  // 6. Drop unused fat (duplicate python bins, sympy, ORT tools, …).
+  slimBundle(out, pyRoot, sitePkgs, ortRoot);
+
   const checks = [
     [pyBin, "python3"],
     [path.join(out, "backend", "run_backend.py"), "run_backend.py"],
@@ -349,7 +491,7 @@ async function main() {
         "-c",
         "import sys; sys.path.insert(0, r'" +
           ortRoot.replaceAll("'", "\\'") +
-          "'); import onnxruntime as o; print(o.__version__); print(o.get_available_providers())",
+          "'); import onnxruntime as o; print(o.__version__); print(o.get_available_providers()); import cv2, numpy, fastapi; print('deps-ok')",
       ],
       { encoding: "utf-8" },
     );

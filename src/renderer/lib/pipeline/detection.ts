@@ -8,6 +8,7 @@ import { sidebar } from "../sidebar";
 import { models } from "../models";
 import type { DetectResult, PageLayer, TextDetection } from "../../types";
 import { sortReadingOrder } from "../utils/reading-order";
+import { nmsByIou } from "../utils/nms";
 import { log } from "../logger";
 import { defaultTypography, loadGlobalTypography } from "../../types";
 
@@ -43,21 +44,30 @@ export const detection = {
       if (!result || result.error)
         throw new Error(result?.detail || "Detection failed");
 
-      // Sort into manga reading order (right→left, top→bottom) so T1..Tn
-      // matches how a reader would encounter the text.
-      const sortedTexts = sortReadingOrder(
-        (result.textDetections || []).map(
-          (d, i): TextDetection => ({
-            id: "text-" + i,
-            bbox: Object.assign({}, d.bbox),
-            type: d.type,
-            confidence: d.confidence || 0,
-            status: "auto",
-            textColor: d.textColor,
-            textAngle: d.textAngle,
-          }),
-        ),
+      // Drop near-duplicate boxes (same bubble emitted twice) then sort into
+      // manga reading order (right→left, top→bottom) so T1..Tn matches how a
+      // reader would encounter the text.
+      const rawTexts = (result.textDetections || []).map(
+        (d, i): TextDetection => ({
+          id: "text-" + i,
+          bbox: Object.assign({}, d.bbox),
+          type: d.type,
+          confidence: d.confidence || 0,
+          status: "auto",
+          textColor: d.textColor,
+          textAngle: d.textAngle,
+        }),
       );
+      const deduped = nmsByIou(rawTexts);
+      if (deduped.length < rawTexts.length) {
+        log.debug(
+          "fe",
+          `detect: NMS ${rawTexts.length} → ${deduped.length} (dropped ${rawTexts.length - deduped.length} overlaps)`,
+        );
+      }
+      const sortedTexts = sortReadingOrder(deduped).map(function (d, i) {
+        return Object.assign({}, d, { id: "text-" + i });
+      });
       page.textDetections = sortedTexts;
       page.maskPath = result.maskPath ?? null;
       log.debug("fe", `detect: done texts=${sortedTexts.length}`);
