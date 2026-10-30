@@ -2,7 +2,7 @@
 import { state } from "../../../state";
 import { canvas } from "../../index";
 import { markSourcesDirty } from "../../render";
-import type { Page, CleanupMask } from "../../../../types";
+import type { Page, CleanupMask, InpaintMask } from "../../../../types";
 
 // ── Brush settings (persisted per app) ──
 
@@ -83,7 +83,7 @@ export function resetPaintSettings(): void {
 
 // ── Cleanup layer lifecycle ──
 
-/** Create cleanup raster layer (never auto-created by paint tools). */
+/** Create cleanup raster layer (paint target above AI inpaint masks). */
 export function ensureCleanupMask(page: Page): CleanupMask {
   if (!page.cleanupMask) {
     page.cleanupMask = {
@@ -109,6 +109,46 @@ export function ensureCleanupCanvas(page: Page): HTMLCanvasElement | null {
     mask.cleanupCanvas = c;
   }
   return mask.cleanupCanvas;
+}
+
+/** Lazy-allocate inpaint edit canvas at bbox size (seeded from patch image). */
+export function ensureInpaintCanvas(mask: InpaintMask): HTMLCanvasElement | null {
+  const w = Math.max(1, Math.round(mask.bbox.w));
+  const h = Math.max(1, Math.round(mask.bbox.h));
+  if (
+    mask.editCanvas &&
+    mask.editCanvas.width === w &&
+    mask.editCanvas.height === h
+  ) {
+    return mask.editCanvas;
+  }
+  const c = document.createElement("canvas");
+  c.width = w;
+  c.height = h;
+  const ctx = c.getContext("2d")!;
+  if (mask.editCanvas) {
+    ctx.drawImage(mask.editCanvas, 0, 0, w, h);
+  } else if (mask.image) {
+    ctx.drawImage(
+      mask.image,
+      0,
+      0,
+      mask.image.naturalWidth || mask.image.width,
+      mask.image.naturalHeight || mask.image.height,
+      0,
+      0,
+      w,
+      h,
+    );
+  }
+  mask.editCanvas = c;
+  mask._hydrated = true;
+  return c;
+}
+
+/** Drawable source for an inpaint mask (edit canvas preferred). */
+export function inpaintDrawable(mask: InpaintMask): CanvasImageSource | null {
+  return mask.editCanvas || mask.image || null;
 }
 
 export function clearCleanupCanvas(page: Page): void {
@@ -186,7 +226,8 @@ export function compositeRegion(
     ctx.drawImage(page.image, x, y, c.width, c.height, 0, 0, c.width, c.height);
   }
   for (const m of page.inpaintMasks) {
-    if (!m.visible || !m.image) continue;
+    const src = inpaintDrawable(m);
+    if (!m.visible || !src) continue;
     const x0 = Math.max(x, m.bbox.x);
     const y0 = Math.max(y, m.bbox.y);
     const x1 = Math.min(x + w, m.bbox.x + m.bbox.w);
@@ -194,7 +235,7 @@ export function compositeRegion(
     if (x1 <= x0 || y1 <= y0) continue;
     ctx.globalAlpha = m.opacity;
     ctx.drawImage(
-      m.image,
+      src,
       x0 - m.bbox.x,
       y0 - m.bbox.y,
       x1 - x0,

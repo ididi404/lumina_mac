@@ -3,13 +3,20 @@ import { state } from "../../../../state";
 import { history } from "../../../../history";
 import { canvas } from "../../../index";
 import { sidebar } from "../../../../sidebar";
+import { log } from "../../../../logger";
 import { defaultTypography, loadGlobalTypography } from "../../../../../types";
 import type { PageLayer, TextDetection } from "../../../../../types";
 import { selections, clearSelections, shapeAABB, isHoleShape } from "../shared";
 import { refreshOverlay } from "../render";
 import { hideContextBar } from "../context-bar";
 
-export function toDetection(): void {
+interface TextStyleRow {
+  index: number;
+  color?: string | null;
+  angle?: number | null;
+}
+
+export async function toDetection(): Promise<void> {
   const page = state.getActivePage();
   if (!page) return;
   const selList = selections.slice();
@@ -20,6 +27,7 @@ export function toDetection(): void {
   }).length;
 
   const newIds: string[] = [];
+  const newDetIndices: number[] = [];
   selList.forEach(function (s) {
     // Merged (Shift) or carved (Alt) selections hold several pieces —
     // convert each piece to its own detection so one box lands per bubble.
@@ -68,10 +76,38 @@ export function toDetection(): void {
       page.layers.splice(insertAt, 0, layer);
 
       newIds.push(id);
+      newDetIndices.push(idx);
     });
   });
 
   if (!newIds.length) return;
+
+  // Same color sampler as /detect — manual boxes previously skipped this.
+  try {
+    const result = await window.lumina.apiPost<{
+      styles?: TextStyleRow[];
+      detail?: string;
+    }>("/text-styles", {
+      imagePath: page.filePath,
+      boxes: newDetIndices.map(function (i) {
+        return page.textDetections[i].bbox;
+      }),
+    });
+    (result?.styles || []).forEach(function (style) {
+      const detIdx = newDetIndices[style.index];
+      if (detIdx == null) return;
+      const det = page.textDetections[detIdx];
+      const layer = page.layers[detIdx];
+      if (!det || !layer || layer.type !== "text-dialogue") return;
+      if (style.color) {
+        det.textColor = style.color;
+        layer.typography.color = style.color;
+      }
+      if (style.angle != null) det.textAngle = style.angle;
+    });
+  } catch (err) {
+    log.warn("fe", `text-styles after manual detect failed: ${err}`);
+  }
 
   const firstNewId = newIds[0];
   page._selectedTextIdx = page.textDetections.findIndex(function (d) {

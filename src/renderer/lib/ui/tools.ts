@@ -2,6 +2,7 @@
 import { state } from "../state";
 import * as i18n from "../i18n";
 import { canvas } from "../canvas/index";
+import { s as modelsState } from "../models/state";
 import { createIcons } from "./icons";
 import { paintSettings, setPaintSize } from "../canvas/tools/paint/shared";
 import { setSliderFill } from "./slider";
@@ -58,9 +59,21 @@ export const tools = {
     // Keyboard shortcuts handled by shortcuts.bindGlobal()
 
     createIcons();
+    this.syncEnabled();
+  },
+
+  /** Enable tools only when a page/project is open. */
+  syncEnabled(): void {
+    const enabled = !!modelsState.hasImage;
+    const panel = document.getElementById("tools-panel");
+    if (panel) panel.classList.toggle("tools-disabled", !enabled);
+    document.querySelectorAll<HTMLButtonElement>(".tool-btn").forEach((btn) => {
+      btn.disabled = !enabled;
+    });
   },
 
   setActive(toolId: string): void {
+    if (!modelsState.hasImage) return;
     state.activeTool = toolId as never;
 
     document.querySelectorAll<HTMLElement>(".tool-btn").forEach((btn) => {

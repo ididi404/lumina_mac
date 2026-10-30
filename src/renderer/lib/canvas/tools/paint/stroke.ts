@@ -4,16 +4,12 @@ import { canvas } from "../../index";
 import {
   markSourcesDirty,
   blitCleanupIntoComposite,
-  recompositeCleanupRegion,
+  blitInpaintIntoComposite,
+  recompositeRegion,
 } from "../../render";
-import {
-  ensureCleanupMask,
-  ensureCleanupCanvas,
-  stageToImg,
-  paintSettings,
-} from "./shared";
+import { stageToImg, paintSettings } from "./shared";
 import { applyStroke, clearSprite } from "./strokes";
-import { requireCleanup } from "./guard";
+import { resolvePaintTarget, type PaintTarget } from "./guard";
 import { commitStrokeTracked } from "./commit";
 import { updateCursor } from "./cursor";
 
@@ -22,6 +18,7 @@ let _points: Array<{ x: number; y: number }> = [];
 let _mode: "brush" | "eraser" | null = null;
 /** Bounding box (image px) of current stroke — blitted per stamped segment. */
 let _dirtyRect: { x: number; y: number; w: number; h: number } | null = null;
+let _target: PaintTarget | null = null;
 let _onMove: ((ev: MouseEvent | TouchEvent) => void) | null = null;
 let _onUp: (() => void) | null = null;
 
@@ -35,17 +32,16 @@ export function handleStroke(
   img: { x: number; y: number },
   mode: "brush" | "eraser",
 ): void {
-  if (!requireCleanup(page)) return;
-  ensureCleanupMask(page);
-  ensureCleanupCanvas(page);
+  const target = resolvePaintTarget(page);
+  if (!target) return;
   clearSprite();
   _dragging = true;
   _mode = mode;
+  _target = target;
   _points = [{ x: img.x, y: img.y }];
   _dirtyRect = { x: img.x, y: img.y, w: 1, h: 1 };
-  applyStroke(page, _points, _mode);
-  const cc = page.cleanupMask?.cleanupCanvas;
-  if (cc) markSourcesDirty([cc]);
+  applyStroke(page, _points, _mode, target);
+  markSourcesDirty([target.canvas]);
   canvas.render();
 
   const getXY = function (ev: MouseEvent | TouchEvent): {
@@ -59,14 +55,14 @@ export function handleStroke(
   };
 
   const onMove = function (ev: MouseEvent | TouchEvent): void {
-    if (!_dragging) return;
+    if (!_dragging || !_target) return;
     const stage = canvas.getStage();
     if (!stage) return;
     const rect = stage.container().getBoundingClientRect();
     const xy = getXY(ev);
     const p = stageToImg(xy.x - rect.left, xy.y - rect.top);
     _points.push(p);
-    applyStroke(page, [_points[_points.length - 2], p], _mode!);
+    applyStroke(page, [_points[_points.length - 2], p], _mode!, _target);
     updateCursor(xy.x - rect.left, xy.y - rect.top);
     // Extend the dirty box and blit the NEWLY painted region into the
     // composite — no full-page re-bake per move.
@@ -79,7 +75,9 @@ export function handleStroke(
     }
     // Eraser removes pixels — blit (source-over) can't reflect that, so
     // re-composite bg + inpaint + cleanup for the dirty region instead.
-    if (_mode === "eraser") recompositeCleanupRegion(page, _dirtyRect!);
+    if (_mode === "eraser") recompositeRegion(page, _dirtyRect!);
+    else if (_target.kind === "inpaint")
+      blitInpaintIntoComposite(page, _target.mask, _dirtyRect!);
     else blitCleanupIntoComposite(page, _dirtyRect!);
     canvas.scheduleRender();
   };
@@ -98,10 +96,12 @@ export function handleStroke(
     if (!_dragging) return;
     _dragging = false;
     const changed = _points.length > 0;
+    const tgt = _target;
     _mode = null;
     _points = [];
     _dirtyRect = null;
-    void commitStrokeTracked(page, changed);
+    _target = null;
+    void commitStrokeTracked(page, changed, tgt);
   };
 
   _onMove = onMove;

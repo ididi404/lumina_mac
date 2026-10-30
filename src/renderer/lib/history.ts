@@ -220,15 +220,23 @@ export const history = {
     page._expandedLayerId = null;
     if (typeof snap.backgroundVisible === "boolean")
       page.backgroundVisible = snap.backgroundVisible;
-    // Preserve existing mask images when the imagePath matches — avoids
-    // a 1-frame flash of the bare background while PNGs reload from disk.
-    const prevMaskImages = new Map(
-      (page.inpaintMasks || []).map((m) => [m.imagePath, m.image]),
+    // Preserve existing mask images/edit canvases when the imagePath matches —
+    // avoids a 1-frame flash of the bare background while PNGs reload from disk.
+    const prevByPath = new Map(
+      (page.inpaintMasks || []).map((m) => [
+        m.imagePath,
+        { image: m.image, editCanvas: m.editCanvas },
+      ]),
     );
-    const masks = (snap.inpaintMasks || []).map((m) => ({
-      ...m,
-      image: prevMaskImages.get(m.imagePath) ?? undefined,
-    }));
+    const masks = (snap.inpaintMasks || []).map((m) => {
+      const prev = prevByPath.get(m.imagePath);
+      return {
+        ...m,
+        image: prev?.image,
+        editCanvas: prev?.editCanvas,
+        _hydrated: !!prev?.editCanvas,
+      };
+    });
     page.inpaintMasks = masks as never;
     // Cleanup raster layer: preserve the runtime canvas when the imagePath
     // hasn't changed; only drop + rehydrate when it points to a different file.

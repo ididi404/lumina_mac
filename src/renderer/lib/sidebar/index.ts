@@ -23,6 +23,41 @@ let _activeTab: "layers" | "masks" = "layers";
 // would otherwise reset the scroll to top on every selection/toggle.
 let _tabScroll: Record<"layers" | "masks", number> = { layers: 0, masks: 0 };
 
+/** Available height for the Type section (leave room for tabs + list). */
+function typeMaxHeight(scroll: HTMLElement): number {
+  return Math.max(TYPE_MIN_HEIGHT, scroll.clientHeight - 48);
+}
+
+/** Natural content height with no CSS/height clamp. */
+function typeNaturalHeight(typeHost: HTMLElement): number {
+  const prevH = typeHost.style.height;
+  const prevMax = typeHost.style.maxHeight;
+  typeHost.style.maxHeight = "none";
+  typeHost.style.height = "auto";
+  const natural = typeHost.scrollHeight;
+  typeHost.style.height = prevH;
+  typeHost.style.maxHeight = prevMax;
+  return Math.max(TYPE_MIN_HEIGHT, natural);
+}
+
+/**
+ * Default: fit full typography content. If the user has dragged the splitter,
+ * honor that stored height (can be shorter — section scrolls internally).
+ */
+function applyTypeHeight(typeHost: HTMLElement, scroll: HTMLElement): void {
+  if (typeSection.isCollapsed()) {
+    typeHost.style.height = "";
+    typeHost.style.maxHeight = "";
+    return;
+  }
+  const max = typeMaxHeight(scroll);
+  const preferred =
+    _typeHeight != null ? _typeHeight : typeNaturalHeight(typeHost);
+  const h = Math.min(Math.max(preferred, TYPE_MIN_HEIGHT), max);
+  typeHost.style.maxHeight = "none";
+  typeHost.style.height = h + "px";
+}
+
 /** Drag the splitter to resize the Type section height (Photoshop-style). */
 function wireSplitter(
   splitter: HTMLElement,
@@ -36,7 +71,7 @@ function wireSplitter(
     typeHost.style.maxHeight = "none";
     document.body.classList.add("resizing-row");
     const onMove = function (ev: MouseEvent) {
-      const max = scroll.clientHeight - 48; // keep room for tabs + list
+      const max = typeMaxHeight(scroll);
       const h = Math.min(
         Math.max(startH + (ev.clientY - startY), TYPE_MIN_HEIGHT),
         max,
@@ -58,12 +93,11 @@ function wireSplitter(
 // Re-clamp the Type section height on window resize — without a render the
 // stored height stays stale and can clip the layer list at the sidebar edge.
 window.addEventListener("resize", function () {
-  if (!_typeHeight || typeSection.isCollapsed()) return;
+  if (typeSection.isCollapsed()) return;
   const el = document.getElementById("type-section");
-  if (!el || !el.parentElement) return;
-  const max = el.parentElement.clientHeight - 48;
-  const h = Math.max(TYPE_MIN_HEIGHT, Math.min(_typeHeight, max));
-  if (h !== el.offsetHeight) el.style.height = h + "px";
+  const scroll = document.getElementById("sidebar-scroll");
+  if (!el || !scroll) return;
+  applyTypeHeight(el, scroll);
 });
 
 function tabHTML(
@@ -113,22 +147,11 @@ export const sidebar = {
     const total = page ? (page.layers || []).length : 0;
     const maskCount = page ? (page.inpaintMasks || []).length : 0;
 
-    // Type section (hidden when no text layer selected; header click collapses)
+    // Type section (header click collapses); height fitted after icons paint
     const typeHost = document.createElement("div");
     scroll.appendChild(typeHost);
     typeSection.build(typeHost);
     typeSection.refresh();
-    if (_typeHeight && !typeSection.isCollapsed()) {
-      // Clamp to the current sidebar height (same budget as the splitter
-      // drag: tabs 32px + splitter 6px + ~10px for the list). The stored
-      // height can be stale after the page strip appears (workspace shrinks
-      // 68px) or the window resizes — without this the layer list gets
-      // pushed out of #sidebar and clipped by its overflow-hidden.
-      const max = scroll.clientHeight - 48;
-      const h = Math.max(TYPE_MIN_HEIGHT, Math.min(_typeHeight, max));
-      typeHost.style.maxHeight = "none";
-      typeHost.style.height = h + "px";
-    }
     const typeHeader = typeHost.querySelector<HTMLElement>(".type-header");
     if (typeHeader) {
       typeHeader.addEventListener("click", function () {
@@ -185,5 +208,7 @@ export const sidebar = {
     content.scrollTop = _tabScroll[_activeTab] || 0;
 
     createIcons();
+    // Measure after lucide SVGs replace <i> placeholders so height fits.
+    applyTypeHeight(typeHost, scroll);
   },
 };

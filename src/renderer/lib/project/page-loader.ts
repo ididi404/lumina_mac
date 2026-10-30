@@ -65,10 +65,42 @@ export async function importImages(): Promise<void> {
   await openImagePaths(filePaths);
 }
 
+function _normPath(p: string): string {
+  return p.replace(/\\/g, "/").toLowerCase();
+}
+
 /** Import path: eager-decodes only the FIRST image, rest are lazy. */
 export async function openImagePaths(filePaths: string[]): Promise<void> {
-  for (let i = 0; i < filePaths.length; i++) {
-    const fp = filePaths[i];
+  // Drop duplicates within this request and paths already in the session —
+  // rapid landing clicks used to append the same file many times.
+  const already = new Set(
+    L.state.pages.map(function (p) {
+      return _normPath(p.filePath);
+    }),
+  );
+  const unique: string[] = [];
+  const seen = new Set<string>();
+  for (const fp of filePaths) {
+    const key = _normPath(fp);
+    if (!key || seen.has(key) || already.has(key)) continue;
+    seen.add(key);
+    unique.push(fp);
+  }
+  if (unique.length === 0) {
+    // All paths already open — just leave landing if we have pages.
+    if (L.state.pages.length > 0) {
+      landing.hide();
+      models.setHasImage(true);
+      canvas.render();
+      canvas.renderPageStrip();
+      ui.updatePageIndicator();
+      sidebar.render();
+    }
+    return;
+  }
+
+  for (let i = 0; i < unique.length; i++) {
+    const fp = unique[i];
     if (i === 0) {
       const page = await _loadImageAsPage(fp);
       if (page) L.state.addPage(page);

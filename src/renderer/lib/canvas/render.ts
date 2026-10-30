@@ -19,6 +19,10 @@ import {
   bindPaintTool,
 } from "./tools/paint/index";
 import { applyTextSelection } from "./detection/selection";
+import {
+  syncMaskHighlight,
+  resetMaskHighlight,
+} from "./layers/mask-highlight";
 let _stage: Konva.Stage | null = null;
 let _layer: Konva.Layer | null = null;
 let _bgImage: Konva.Image | null = null; // Konva.Image for background
@@ -48,6 +52,7 @@ export function destroyStage(): void {
   resetSelectStage();
   resetTextStage();
   resetPaintStage();
+  resetMaskHighlight();
 }
 
 export function scheduleRender(): void {
@@ -124,8 +129,9 @@ function _bakeComposite(
   const img = page?.image;
   if (!page || !img) return null;
   const hasRaster =
-    (page.inpaintMasks || []).some((m) => m.visible && m.image) ||
-    (page.cleanupMask?.visible && !!page.cleanupMask.cleanupCanvas);
+    (page.inpaintMasks || []).some(
+      (m) => m.visible && !!(m.editCanvas || m.image),
+    ) || (page.cleanupMask?.visible && !!page.cleanupMask.cleanupCanvas);
   if (!hasRaster) return null; // clean page — caller draws page.image directly
   const cw = Math.max(1, page.naturalWidth);
   const ch = Math.max(1, page.naturalHeight);
@@ -137,14 +143,23 @@ function _bakeComposite(
   ctx.imageSmoothingQuality = "high";
   if (page.backgroundVisible !== false) ctx.drawImage(img, 0, 0, cw, ch);
   for (const m of page.inpaintMasks || []) {
-    if (!m.visible || !m.image) continue;
+    const src = m.editCanvas || m.image;
+    if (!m.visible || !src) continue;
+    const sw =
+      src instanceof HTMLCanvasElement
+        ? src.width
+        : src.naturalWidth || src.width;
+    const sh =
+      src instanceof HTMLCanvasElement
+        ? src.height
+        : src.naturalHeight || src.height;
     ctx.globalAlpha = m.opacity;
     ctx.drawImage(
-      m.image,
+      src,
       0,
       0,
-      m.image.naturalWidth || m.image.width,
-      m.image.naturalHeight || m.image.height,
+      sw,
+      sh,
       Math.round(m.bbox.x),
       Math.round(m.bbox.y),
       Math.round(m.bbox.w),
@@ -180,16 +195,40 @@ export function blitCleanupIntoComposite(
   ctx.globalAlpha = 1;
 }
 
-/** Re-composite a cleanup region (eraser drag fast-path).
- *  Unlike blitCleanupIntoComposite, this redraws bg + inpaint + cleanup
- *  inside the rect so that erased (transparent) pixels are reflected. */
-export function recompositeCleanupRegion(
+/** Blit an edited inpaint patch region into the baked composite. */
+export function blitInpaintIntoComposite(
+  page: ReturnType<typeof state.getActivePage>,
+  mask: { bbox: { x: number; y: number; w: number; h: number }; opacity: number; visible: boolean; editCanvas?: HTMLCanvasElement; image?: HTMLImageElement },
+  rect: { x: number; y: number; w: number; h: number },
+): void {
+  const cache = state._compositeCache;
+  const src = mask.editCanvas || mask.image;
+  if (!page || !cache || !src || !mask.visible) return;
+  const bx = Math.round(mask.bbox.x);
+  const by = Math.round(mask.bbox.y);
+  const bw = Math.round(mask.bbox.w);
+  const bh = Math.round(mask.bbox.h);
+  const x0 = Math.max(bx, Math.floor(rect.x));
+  const y0 = Math.max(by, Math.floor(rect.y));
+  const x1 = Math.min(bx + bw, Math.ceil(rect.x + rect.w));
+  const y1 = Math.min(by + bh, Math.ceil(rect.y + rect.h));
+  const w = x1 - x0;
+  const h = y1 - y0;
+  if (w <= 0 || h <= 0) return;
+  const ctx = cache.canvas.getContext("2d")!;
+  ctx.globalAlpha = mask.opacity;
+  ctx.drawImage(src, x0 - bx, y0 - by, w, h, x0, y0, w, h);
+  ctx.globalAlpha = 1;
+}
+
+/** Re-composite a region (eraser drag fast-path).
+ *  Redraws bg + inpaint + cleanup inside the rect so erased pixels show. */
+export function recompositeRegion(
   page: ReturnType<typeof state.getActivePage>,
   rect: { x: number; y: number; w: number; h: number },
 ): void {
   const cache = state._compositeCache;
-  const cc = page?.cleanupMask?.cleanupCanvas;
-  if (!page || !cache || !cc || !page.cleanupMask?.visible) return;
+  if (!page || !cache) return;
   const img = page.image;
   if (!img) return;
   const x = Math.max(0, Math.floor(rect.x));
@@ -206,16 +245,25 @@ export function recompositeCleanupRegion(
   if (page.backgroundVisible !== false)
     ctx.drawImage(img, 0, 0, page.naturalWidth, page.naturalHeight);
   else ctx.clearRect(x, y, w, h);
-  // 2. inpaint masks
+  // 2. inpaint masks (edit canvas preferred)
   for (const m of page.inpaintMasks || []) {
-    if (!m.visible || !m.image) continue;
+    const src = m.editCanvas || m.image;
+    if (!m.visible || !src) continue;
+    const sw =
+      src instanceof HTMLCanvasElement
+        ? src.width
+        : src.naturalWidth || src.width;
+    const sh =
+      src instanceof HTMLCanvasElement
+        ? src.height
+        : src.naturalHeight || src.height;
     ctx.globalAlpha = m.opacity;
     ctx.drawImage(
-      m.image,
+      src,
       0,
       0,
-      m.image.naturalWidth || m.image.width,
-      m.image.naturalHeight || m.image.height,
+      sw,
+      sh,
       Math.round(m.bbox.x),
       Math.round(m.bbox.y),
       Math.round(m.bbox.w),
@@ -224,11 +272,17 @@ export function recompositeCleanupRegion(
     ctx.globalAlpha = 1;
   }
   // 3. cleanup overlay
-  ctx.globalAlpha = page.cleanupMask.opacity;
-  ctx.drawImage(cc, 0, 0, page.naturalWidth, page.naturalHeight);
-  ctx.globalAlpha = 1;
+  const cc = page.cleanupMask?.cleanupCanvas;
+  if (page.cleanupMask?.visible && cc) {
+    ctx.globalAlpha = page.cleanupMask.opacity;
+    ctx.drawImage(cc, 0, 0, page.naturalWidth, page.naturalHeight);
+    ctx.globalAlpha = 1;
+  }
   ctx.restore();
 }
+
+/** @deprecated alias — eraser used to only target cleanup */
+export const recompositeCleanupRegion = recompositeRegion;
 
 /** Destroy main-layer children (prevent Konva node leaks). */
 function _destroyLayerChildren(): void {
@@ -296,8 +350,9 @@ function _render(): void {
   // baked canvas (blitCleanupIntoComposite) instead of re-baking.
   const cur = state._compositeCache;
   const hasRaster =
-    (page.inpaintMasks || []).some((m) => m.visible && m.image) ||
-    (page.cleanupMask?.visible && !!page.cleanupMask.cleanupCanvas);
+    (page.inpaintMasks || []).some(
+      (m) => m.visible && !!(m.editCanvas || m.image),
+    ) || (page.cleanupMask?.visible && !!page.cleanupMask.cleanupCanvas);
   const needBake =
     hasRaster &&
     (!cur ||
@@ -414,6 +469,8 @@ function _render(): void {
   canvas._updateStatus();
   canvas.updateBoxToggle();
   _layer.draw();
+  // Mask selection pulse sits above page content (own Konva layer).
+  syncMaskHighlight();
 }
 
 /** Drop baked composite for a page (on page removal). */

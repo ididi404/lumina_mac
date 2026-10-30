@@ -43,6 +43,24 @@ class DetectResponse(BaseModel):
     maskPath: str | None = None
 
 
+class TextStylesRequest(BaseModel):
+    """Sample dominant glyph color (+ slant) for existing boxes — used by
+    manual marquee→detection so color matches auto-detect."""
+
+    imagePath: str
+    boxes: list[Bbox]
+
+
+class TextStyleResult(BaseModel):
+    index: int
+    color: str | None = None  # #rrggbb
+    angle: float | None = None
+
+
+class TextStylesResponse(BaseModel):
+    styles: list[TextStyleResult]
+
+
 class OcrRequest(BaseModel):
     imagePath: str
     boxes: list[Bbox]

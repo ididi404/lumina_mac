@@ -116,7 +116,9 @@ function buildPageLayers(
   const hasCleanup =
     page.cleanupMask?.visible &&
     (page.cleanupMask?.imagePath || page.cleanupMask?.cleanupCanvas);
-  const hasInpaint = page.inpaintMasks.some((m) => m.visible && m.image);
+  const hasInpaint = page.inpaintMasks.some(
+    (m) => m.visible && !!(m.editCanvas || m.image),
+  );
   if (hasCleanup || hasInpaint) {
     children.push({
       name: "Cleanup",
@@ -127,9 +129,10 @@ function buildPageLayers(
       imageData: renderToImageData(
         (ctx) => {
           for (const m of page.inpaintMasks) {
-            if (!m.visible || !m.image) continue;
+            const src = m.editCanvas || m.image;
+            if (!m.visible || !src) continue;
             ctx.globalAlpha = m.opacity;
-            ctx.drawImage(m.image, m.bbox.x, m.bbox.y, m.bbox.w, m.bbox.h);
+            ctx.drawImage(src, m.bbox.x, m.bbox.y, m.bbox.w, m.bbox.h);
           }
           const cc = page.cleanupMask ? ensureCleanupCanvas(page) : null;
           if (cc && page.cleanupMask?.visible) {

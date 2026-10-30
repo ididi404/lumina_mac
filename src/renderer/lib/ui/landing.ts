@@ -15,6 +15,23 @@ export interface LandingHandlers {
 
 let _root: HTMLElement | null = null;
 let _handlers: LandingHandlers | null = null;
+/** Blocks double-clicks while a slow first open/import is still running. */
+let _busy = false;
+
+function _setBusy(on: boolean): void {
+  _busy = on;
+  if (_root) _root.classList.toggle("landing-busy", on);
+}
+
+async function _runOnce(fn: () => Promise<void>): Promise<void> {
+  if (_busy || !_handlers) return;
+  _setBusy(true);
+  try {
+    await fn();
+  } finally {
+    _setBusy(false);
+  }
+}
 
 function _esc(s: string): string {
   return s
@@ -139,6 +156,7 @@ function _onClick(e: MouseEvent): void {
   const removeBtn = target.closest("[data-remove]") as HTMLElement | null;
   if (removeBtn) {
     e.stopPropagation();
+    if (_busy) return;
     const path = removeBtn.getAttribute("data-remove");
     if (path) {
       void window.lumina.removeRecent(path).then(_render);
@@ -146,14 +164,25 @@ function _onClick(e: MouseEvent): void {
     return;
   }
 
+  // Ignore further opens while the first click is still loading (startup lag).
+  if (_busy) {
+    e.preventDefault();
+    e.stopPropagation();
+    return;
+  }
+
   const importBtn = target.closest("#landing-import");
   if (importBtn) {
-    void _handlers.importImages();
+    void _runOnce(function () {
+      return _handlers!.importImages();
+    });
     return;
   }
   const openBtn = target.closest("#landing-open");
   if (openBtn) {
-    void _handlers.openProject();
+    void _runOnce(function () {
+      return _handlers!.openProject();
+    });
     return;
   }
 
@@ -162,8 +191,15 @@ function _onClick(e: MouseEvent): void {
   const path = row.getAttribute("data-path");
   const kind = row.getAttribute("data-kind");
   if (!path) return;
-  if (kind === "project") void _handlers.openProject(path);
-  else void _handlers.openImagePath(path);
+  if (kind === "project") {
+    void _runOnce(function () {
+      return _handlers!.openProject(path);
+    });
+  } else {
+    void _runOnce(function () {
+      return _handlers!.openImagePath(path);
+    });
+  }
 }
 
 export function init(handlers: LandingHandlers): void {

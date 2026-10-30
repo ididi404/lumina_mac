@@ -1160,6 +1160,28 @@ body.resizing-settings * {
   font-size: 0.62rem;
   color: rgba(255, 255, 255, 0.4);
   text-transform: capitalize;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+/* Background file name: truncate stem only, keep extension intact. */
+.layer-filename {
+  display: flex;
+  align-items: baseline;
+  min-width: 0;
+  max-width: 100%;
+  text-transform: none;
+  overflow: hidden;
+}
+.layer-filename-stem {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.layer-filename-ext {
+  flex-shrink: 0;
+  white-space: nowrap;
 }
 .layer-eye {
   width: 22px;
@@ -1189,7 +1211,7 @@ body.resizing-settings * {
 
 /* ── Type section (koharu-style typography inspector) ── */
 .type-section {
-  max-height: 240px;
+  /* Height is set in sidebar.render() to fit content; no CSS cap that clips. */
   background: rgba(14, 14, 16, 0.4);
 }
 /* The type section follows the sidebar width — controls stretch/fill their
@@ -1225,7 +1247,10 @@ body.resizing-row {
   user-select: none;
 }
 .type-section.type-disabled {
-  opacity: 0.4;
+  opacity: 0.55;
+}
+/* Keep the collapse header clickable; only the body is inert when disabled. */
+.type-section.type-disabled #type-body {
   pointer-events: none;
 }
 .type-field-label {
@@ -2536,13 +2561,20 @@ body.resizing-row {
     background 0.1s,
     color 0.1s;
 }
-.tool-btn:hover {
+.tool-btn:hover:not(:disabled) {
   background: #2a2a2a;
   color: #d4d4d4;
 }
-.tool-btn.active {
+.tool-btn.active:not(:disabled) {
   background: #e94560;
   color: #fff;
+}
+.tool-btn:disabled,
+#tools-panel.tools-disabled .tool-btn {
+  opacity: 0.35;
+  cursor: default;
+  background: transparent;
+  color: #6a6a6a;
 }
 /* Momentary eyedropper (Alt held) — amber ring so it's distinct from the
    pink "active" state and the hover background. */
@@ -3067,6 +3099,11 @@ html[data-platform="darwin"] .titlebar-traffic-spacer {
   background: var(--color-surface-0);
   z-index: 10;
 }
+#landing.landing-busy {
+  pointer-events: none;
+  cursor: wait;
+  opacity: 0.72;
+}
 .landing-inner {
   display: flex;
   flex-direction: column;
@@ -3495,8 +3532,9 @@ html[data-platform="darwin"] .titlebar-traffic-spacer {
 .dynamic-island {
   position: absolute;
   left: 50%;
-  top: 2px;
-  transform: translateX(-50%) translateY(-4px);
+  top: 50%;
+  /* Center in the titlebar (header is position:relative). */
+  transform: translate(-50%, calc(-50% - 4px));
   opacity: 0;
   pointer-events: none;
   z-index: 100;
@@ -3517,7 +3555,6 @@ html[data-platform="darwin"] .titlebar-traffic-spacer {
   transition:
     opacity 0.15s ease,
     transform 0.15s ease,
-    top 0.18s ease,
     border-color 0.15s,
     background-color 0.15s,
     box-shadow 0.15s;
@@ -3527,7 +3564,7 @@ html[data-platform="darwin"] .titlebar-traffic-spacer {
 .dynamic-island.active {
   opacity: 1;
   pointer-events: auto;
-  transform: translateX(-50%) translateY(0);
+  transform: translate(-50%, -50%);
   -webkit-app-region: no-drag;
 }
 .dynamic-island.type-running {

@@ -161,6 +161,10 @@ export interface InpaintMask {
   opacity: number; // 0-1
   /** Loaded patch image (runtime only — not serialized in history) */
   image?: HTMLImageElement;
+  /** Runtime paint surface at bbox size — preferred over `image` while editing */
+  editCanvas?: HTMLCanvasElement;
+  /** True once editCanvas matches imagePath (hydrate/commit done). Runtime-only. */
+  _hydrated?: boolean;
 }
 
 /** Full-page raster paint layer (brush/eraser/bucket). One per page,

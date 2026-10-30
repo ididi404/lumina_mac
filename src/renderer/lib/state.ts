@@ -81,7 +81,7 @@ export const state: AppState = new (class implements AppState {
     postScriptName: string;
   }> = [];
   sidebarCollapsed = false;
-  sidebarWidth = 260;
+  sidebarWidth = 270;
   showDetBoxes = true;
 
   _zoomLevel = 1;

@@ -9,6 +9,17 @@ let _ants: Konva.Line[] = [];
 let _preview: Konva.Shape | null = null;
 let _animation: Konva.Animation | null = null;
 
+/** Drop overlay refs after destroyStage() — old layer is detached/dead. */
+export function resetOverlayLayer(): void {
+  if (_animation) {
+    _animation.stop();
+    _animation = null;
+  }
+  _preview = null;
+  _ants = [];
+  _layer = null;
+}
+
 /** Closed polyline points array (flat [x,y,...]) from stage-space points */
 function _closedPoints(points: Array<{ x: number; y: number }>): number[] {
   const out: number[] = [];
@@ -39,11 +50,15 @@ function _rectStagePoints(b: {
 function _getLayer(): Konva.Layer | null {
   const stage = canvas.getStage();
   if (!stage) return null;
-  if (!_layer) {
-    _layer = new Konva.Layer({ listening: false });
+  // Stage may have been destroyed/recreated — recreate overlay on the live one.
+  if (!_layer || _layer.getStage() !== stage) {
+    _preview = null;
+    _ants = [];
+    _layer = new Konva.Layer({ listening: false, name: "select-overlay" });
     stage.add(_layer);
-    _layer.moveToTop();
   }
+  // Stay above page content / transformers so ants + rubber-band stay visible.
+  _layer.moveToTop();
   return _layer;
 }
 

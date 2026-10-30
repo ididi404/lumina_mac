@@ -64,6 +64,31 @@ function layerName(layer: PageLayer): string {
   return trimmed.length > 30 ? trimmed.slice(0, 30) + "…" : trimmed;
 }
 
+/**
+ * One-line filename: stem truncates with …, extension stays fully visible.
+ * e.g. "very-long-page-name.png" → stem ellipsized + ".png"
+ */
+function filenameSubHTML(fileName: string): string {
+  const base = String(fileName || "");
+  const dot = base.lastIndexOf(".");
+  // Keep extension when it looks like one (not ".gitignore"-only / no stem).
+  const hasExt = dot > 0 && dot < base.length - 1;
+  const stem = hasExt ? base.slice(0, dot) : base;
+  const ext = hasExt ? base.slice(dot) : "";
+  return (
+    '<span class="layer-kind layer-filename" title="' +
+    esc(base) +
+    '">' +
+    '<span class="layer-filename-stem">' +
+    esc(stem) +
+    "</span>" +
+    (ext
+      ? '<span class="layer-filename-ext">' + esc(ext) + "</span>"
+      : "") +
+    "</span>"
+  );
+}
+
 export function layerListHTML(page: Page | null): string {
   if (!page) return "";
 
@@ -86,8 +111,9 @@ export function layerListHTML(page: Page | null): string {
   html += virtualRowHTML(
     "background",
     i18n.t("layers.background"),
-    page.fileName,
+    filenameSubHTML(page.fileName),
     page.backgroundVisible !== false,
+    true,
   );
 
   if (!html)
@@ -103,6 +129,7 @@ function virtualRowHTML(
   name: string,
   sub: string,
   visible: boolean,
+  subIsHtml: boolean = false,
 ): string {
   return (
     '<div class="layer-row layer-row-virtual" data-virtual="' +
@@ -116,9 +143,7 @@ function virtualRowHTML(
     '<span class="layer-name">' +
     esc(name) +
     "</span>" +
-    '<span class="layer-kind">' +
-    esc(sub) +
-    "</span>" +
+    (subIsHtml ? sub : '<span class="layer-kind">' + esc(sub) + "</span>") +
     "</div>" +
     '<button class="layer-eye" data-action="toggle-visible" title="' +
     esc(i18n.t("layers.toggleVisible")) +

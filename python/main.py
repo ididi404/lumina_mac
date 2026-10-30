@@ -17,6 +17,9 @@ from schemas import (
     ModelInfo,
     ModelDownloadRequest,
     DeviceConfigureRequest,
+    TextStylesRequest,
+    TextStylesResponse,
+    TextStyleResult,
     OcrRequest,
     OcrResponse,
     OcrResult,
@@ -202,6 +205,38 @@ def detect(req: DetectRequest):
         raise HTTPException(status_code=500, detail=str(e))
     finally:
         _keep_one_hot("detect")
+
+
+@app.post("/text-styles", response_model=TextStylesResponse)
+def text_styles(req: TextStylesRequest):
+    """Color/slant for caller-supplied boxes (manual detection, re-sample)."""
+    if not Path(req.imagePath).is_file():
+        raise HTTPException(status_code=400, detail="Image file not found")
+    if not req.boxes:
+        return TextStylesResponse(styles=[])
+
+    try:
+        from services.color import detect_text_styles
+
+        boxes = [b.model_dump() for b in req.boxes]
+        log.debug(f"text-styles: {len(boxes)} box(es)")
+        raw = detect_text_styles(req.imagePath, boxes)
+        return TextStylesResponse(
+            styles=[
+                TextStyleResult(
+                    index=i,
+                    color=s.get("color"),
+                    angle=s.get("angle"),
+                )
+                for i, s in enumerate(raw)
+            ]
+        )
+    except Exception as e:
+        log.error(f"text-styles failed: {e}")
+        import traceback
+
+        log.debug(traceback.format_exc())
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 @app.post("/ocr", response_model=OcrResponse)

@@ -202,7 +202,7 @@ canvas._initSidebarResize = function (): void {
   document.addEventListener("mousemove", function (e) {
     if (!dragging) return;
     let newWidth = window.innerWidth - e.clientX;
-    newWidth = Math.max(180, Math.min(400, newWidth));
+    newWidth = Math.max(270, Math.min(400, newWidth));
     sidebarEl.style.width = newWidth + "px";
     state.sidebarWidth = newWidth;
   });

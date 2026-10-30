@@ -1,6 +1,7 @@
 /** Stroke engine — brush/eraser stamps + bucket BFS flood fill. */
 import type { Page } from "../../../../types";
-import { paintSettings, ensureCleanupCanvas, compositeRegion } from "./shared";
+import type { PaintTarget } from "./guard";
+import { paintSettings, compositeRegion } from "./shared";
 
 const MAX_SAMPLE_STEP = 0.25; // stamps every 25% of brush diameter
 
@@ -122,24 +123,21 @@ export interface StrokePoint {
   y: number;
 }
 
-/** Stamp one sprite at image px (x, y). */
+/** Stamp one sprite at target-local px (x, y). */
 function stamp(
-  page: Page,
   c: HTMLCanvasElement,
   img: HTMLCanvasElement,
   x: number,
   y: number,
 ): void {
-  void page;
   const ctx = c.getContext("2d")!;
   const cx = img.width / 2;
   const cy = img.height / 2;
   ctx.drawImage(img, Math.round(x) - cx, Math.round(y) - cy);
 }
 
-/** Stamp a line between a and b (image px) — interpolated. */
+/** Stamp a line between a and b (target-local px) — interpolated. */
 function stampLine(
-  page: Page,
   c: HTMLCanvasElement,
   img: HTMLCanvasElement,
   ax: number,
@@ -154,33 +152,41 @@ function stampLine(
   const n = Math.max(1, Math.ceil(dist / step));
   for (let i = 0; i <= n; i++) {
     const t = i / n;
-    stamp(page, c, img, ax + dx * t, ay + dy * t);
+    stamp(c, img, ax + dx * t, ay + dy * t);
   }
 }
 
-/** Paint (or erase) along a polyline path. */
+/** Paint (or erase) along a polyline path in page-image px. */
 export function applyStroke(
   page: Page,
   points: StrokePoint[],
   mode: "brush" | "eraser",
+  target: PaintTarget,
 ): void {
-  const c = ensureCleanupCanvas(page);
-  if (!c || points.length === 0) return;
+  void page;
+  const c = target.canvas;
+  if (points.length === 0) return;
   const ctx = c.getContext("2d")!;
   const img = mode === "brush" ? sprite() : eraserSprite();
   if (mode === "eraser") ctx.globalCompositeOperation = "destination-out";
   else ctx.globalCompositeOperation = "source-over";
 
-  stamp(page, c, img, points[0].x, points[0].y);
+  const lx = function (p: StrokePoint): number {
+    return p.x - target.ox;
+  };
+  const ly = function (p: StrokePoint): number {
+    return p.y - target.oy;
+  };
+
+  stamp(c, img, lx(points[0]), ly(points[0]));
   for (let i = 1; i < points.length; i++) {
     stampLine(
-      page,
       c,
       img,
-      points[i - 1].x,
-      points[i - 1].y,
-      points[i].x,
-      points[i].y,
+      lx(points[i - 1]),
+      ly(points[i - 1]),
+      lx(points[i]),
+      ly(points[i]),
     );
   }
   ctx.globalCompositeOperation = "source-over";
@@ -253,20 +259,21 @@ function computeFillMask(
   return match;
 }
 
-/** Flood-fill the cleanup layer: matching composite pixels get the paint
+/** Flood-fill the paint target: matching composite pixels get the paint
  *  color (at paint opacity). Returns the filled region's bounding box
- *  (image px) or null when nothing changed. */
+ *  (page-image px) or null when nothing changed. */
 export function applyBucket(
   page: Page,
   seedX: number,
   seedY: number,
+  target: PaintTarget,
 ): { x: number; y: number; w: number; h: number } | null {
-  const c = ensureCleanupCanvas(page);
-  if (!c) return null;
+  const c = target.canvas;
   const s = paintSettings();
   const [fr, fg, fb] = hexToRgb(s.color);
   const fa = s.opacity;
 
+  // Sample against full-page composite so fill matches what the user sees.
   const composite = compositeRegion(
     page,
     0,
@@ -275,11 +282,18 @@ export function applyBucket(
     page.naturalHeight,
   )
     .getContext("2d")!
-    .getImageData(0, 0, c.width, c.height);
+    .getImageData(0, 0, page.naturalWidth, page.naturalHeight);
 
-  const w = c.width;
-  const h = c.height;
-  if (seedX < 0 || seedY < 0 || seedX >= w || seedY >= h) return null;
+  const pw = page.naturalWidth;
+  const ph = page.naturalHeight;
+  if (seedX < 0 || seedY < 0 || seedX >= pw || seedY >= ph) return null;
+
+  // For inpaint targets, seed must land inside the patch.
+  if (target.kind === "inpaint") {
+    const lx = seedX - target.ox;
+    const ly = seedY - target.oy;
+    if (lx < 0 || ly < 0 || lx >= c.width || ly >= c.height) return null;
+  }
 
   const match = computeFillMask(
     composite,
@@ -290,28 +304,33 @@ export function applyBucket(
   );
 
   const ctx = c.getContext("2d")!;
-  const cur = ctx.getImageData(0, 0, w, h);
+  const cur = ctx.getImageData(0, 0, c.width, c.height);
   const out = cur.data;
-  let minX = w;
-  let minY = h;
+  let minX = pw;
+  let minY = ph;
   let maxX = -1;
   let maxY = -1;
   let changed = 0;
-  for (let i = 0; i < w * h; i++) {
-    if (!match[i]) continue;
-    const o = i * 4;
-    const a = fa;
-    out[o] = fr * a + out[o] * (1 - a);
-    out[o + 1] = fg * a + out[o + 1] * (1 - a);
-    out[o + 2] = fb * a + out[o + 2] * (1 - a);
-    out[o + 3] = Math.max(out[o + 3], 255 * a);
-    changed++;
-    const px = i % w;
-    const py = (i / w) | 0;
-    if (px < minX) minX = px;
-    if (px > maxX) maxX = px;
-    if (py < minY) minY = py;
-    if (py > maxY) maxY = py;
+
+  for (let py = 0; py < ph; py++) {
+    for (let px = 0; px < pw; px++) {
+      const pi = py * pw + px;
+      if (!match[pi]) continue;
+      const lx = px - target.ox;
+      const ly = py - target.oy;
+      if (lx < 0 || ly < 0 || lx >= c.width || ly >= c.height) continue;
+      const o = (ly * c.width + lx) * 4;
+      const a = fa;
+      out[o] = fr * a + out[o] * (1 - a);
+      out[o + 1] = fg * a + out[o + 1] * (1 - a);
+      out[o + 2] = fb * a + out[o + 2] * (1 - a);
+      out[o + 3] = Math.max(out[o + 3], 255 * a);
+      changed++;
+      if (px < minX) minX = px;
+      if (px > maxX) maxX = px;
+      if (py < minY) minY = py;
+      if (py > maxY) maxY = py;
+    }
   }
   if (!changed) return null;
   ctx.putImageData(cur, 0, 0);

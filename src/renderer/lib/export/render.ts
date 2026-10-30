@@ -30,7 +30,7 @@ function loadImage(p: string): Promise<HTMLImageElement> {
 /** Saved projects don't carry the decoded mask images — reload them. */
 export async function ensureMaskImages(page: Page): Promise<void> {
   for (const m of page.inpaintMasks) {
-    if (m.image) continue;
+    if (m.editCanvas || m.image) continue;
     try {
       m.image = await loadImage(m.imagePath);
     } catch {
@@ -121,10 +121,11 @@ export async function renderPageToCanvas(
   }
 
   for (const m of page.inpaintMasks) {
-    if (!m.visible || !m.image) continue;
+    const src = m.editCanvas || m.image;
+    if (!m.visible || !src) continue;
     layer.add(
       new Konva.Image({
-        image: m.image,
+        image: src,
         x: m.bbox.x,
         y: m.bbox.y,
         width: m.bbox.w,

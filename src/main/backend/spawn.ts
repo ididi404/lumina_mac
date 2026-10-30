@@ -1,6 +1,7 @@
 /** Backend spawn — launch, health-check, stop Python. */
 import { spawn, ChildProcess } from "child_process";
 import { app } from "electron";
+import fs from "fs";
 import http from "http";
 import path from "path";
 import { PROJECT_ROOT } from "../core/paths";
@@ -59,13 +60,25 @@ function resolveLaunch(): PythonLaunch {
     };
   }
   const dir = path.join(PROJECT_ROOT, "python");
+  const fromEnv = process.env.LUMINA_PYTHON?.trim();
+  let executable: string;
+  if (fromEnv) {
+    executable = fromEnv;
+  } else if (process.platform === "win32") {
+    executable = path.join(PROJECT_ROOT, "venv", "Scripts", "python.exe");
+  } else {
+    const candidates = [
+      path.join(PROJECT_ROOT, "venv", "bin", "python"),
+      path.join(PROJECT_ROOT, "python-env", "bin", "python"),
+    ];
+    executable =
+      candidates.find((p) => fs.existsSync(p)) ??
+      path.join(PROJECT_ROOT, "venv", "bin", "python");
+  }
   return {
     dir,
     entry: path.join(dir, "main.py"),
-    executable:
-      process.platform === "win32"
-        ? path.join(PROJECT_ROOT, "venv", "Scripts", "python.exe")
-        : path.join(PROJECT_ROOT, "venv", "bin", "python"),
+    executable,
     pythonPath: null,
   };
 }

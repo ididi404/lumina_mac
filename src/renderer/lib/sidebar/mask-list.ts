@@ -167,6 +167,7 @@ export function wireMaskEvents(): void {
       if (page) {
         page._selectedMaskId = page._selectedMaskId === id ? null : id;
         sidebar.render();
+        canvas.render(); // refresh red selection pulse on canvas
       }
     });
   });
@@ -222,6 +223,7 @@ export function wireMaskEvents(): void {
         if (page) {
           page._selectedMaskId = page._selectedMaskId === id ? null : id;
           sidebar.render();
+          canvas.render(); // refresh red selection pulse on canvas
         }
       });
     });

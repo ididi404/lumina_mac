@@ -16,7 +16,12 @@ import {
   type Selection,
   type SelectionShape,
 } from "./shared";
-import { updatePreview, clearPreview, refreshOverlay } from "./render";
+import {
+  updatePreview,
+  clearPreview,
+  refreshOverlay,
+  resetOverlayLayer,
+} from "./render";
 import { syncContextBar, hideContextBar } from "./context-bar";
 import { hitTransformer } from "../../hit-transformer";
 
@@ -183,6 +188,7 @@ function removeSelection(id: string): void {
 /** Allow re-bind after destroyStage() creates a fresh Konva stage. */
 export function resetStageBinding(): void {
   _bound = false;
+  resetOverlayLayer();
 }
 
 export function bindStageInteractions(): void {

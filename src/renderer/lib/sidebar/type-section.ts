@@ -3,6 +3,7 @@ import { state } from "../state";
 import * as i18n from "../i18n";
 import { canvas } from "../canvas/index";
 import { history } from "../history";
+import { s as modelsState } from "../models/state";
 import { createIcons } from "../ui/icons";
 import { internalFontName } from "../utils/font-loader";
 import { loadGlobalTypography, saveGlobalTypography } from "../../types";
@@ -278,15 +279,21 @@ export const typeSection = {
     const page: Page | null = state.getActivePage();
     const layer = selectedTextLayer(page);
     // Always visible; no selection edits the global defaults (which new
-    // layers inherit), selection edits the layer.
+    // layers inherit), selection edits the layer. Disabled with no project.
+    const enabled = !!modelsState.hasImage;
     host.classList.remove("hidden");
-    host.classList.toggle("type-disabled", false);
+    host.classList.toggle("type-disabled", !enabled);
     host
       .querySelectorAll<
         HTMLInputElement | HTMLSelectElement | HTMLButtonElement
       >("input, select, button")
       .forEach(function (el) {
-        el.disabled = false;
+        // Collapse/expand stays available on the landing screen.
+        if (el.classList.contains("type-collapse-btn")) {
+          el.disabled = false;
+          return;
+        }
+        el.disabled = !enabled;
       });
     const t = layer ? layer.typography : _globalType;
     const set = function (id: string, value: string): void {

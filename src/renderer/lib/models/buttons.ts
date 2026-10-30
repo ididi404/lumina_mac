@@ -1,5 +1,6 @@
 /** Enable/disable header buttons based on model + image state. */
 import * as i18n from "../i18n";
+import { tools } from "../ui/tools";
 import { s, el } from "./state";
 import { selectedReady, allReady } from "./selection";
 
@@ -29,4 +30,6 @@ export function updateButtons(): void {
 
   const warn = el("btn-models") as HTMLButtonElement | null;
   if (warn) warn.hidden = allReady();
+
+  tools.syncEnabled();
 }

@@ -64,7 +64,7 @@ export function showContextBar(): void {
       count > 1 ? i18n.t("selectool.convertAll") : i18n.t("selectool.convert"),
       "selectool-bar-action",
       function () {
-        toDetection();
+        void toDetection();
       },
     ),
   );
